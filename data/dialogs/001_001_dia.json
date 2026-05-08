@@ -1,0 +1,24 @@
+{
+  "start": {
+    "text": "Гомес: Стой! Кто здесь?",
+    "options": [
+      {"text": "Я свой, пусти.", "next": "bluff", "effect": {"humanity": -5}},
+      {"text": "Угрожаю рыкнуть", "next": "intimidate", "effect": {"humanity": -10}},
+      {"text": "Извини, ошибся", "next": "end"}
+    ]
+  },
+  "bluff": {
+    "text": "Гомес: Ну смотри, проходи.",
+    "effect": {"guard_encountered": true},
+    "next": "close"
+  },
+  "intimidate": {
+    "text": "Гомес: А-а-а, монстр!!! (убегает)",
+    "effect": {"guard_encountered": true},
+    "next": "close"
+  },
+  "end": {
+    "text": "Гомес: Ладно, иди.",
+    "next": "close"
+  }
+}
