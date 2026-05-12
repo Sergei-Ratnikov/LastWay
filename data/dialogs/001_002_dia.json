@@ -1,0 +1,24 @@
+{
+  "start": {
+    "text": "Педро: Стоять!",
+    "options": [
+      {"text": "Свои.", "next": "bluff", "effect": {"humanity": -5}},
+      {"text": "Прочь!", "next": "intimidate", "effect": {"humanity": -10}},
+      {"text": "Извиняй!", "next": "end"}
+    ]
+  },
+  "bluff": {
+    "text": "Педро: Ну проходи.",
+    "effect": {"guard_encountered": true},
+    "next": "close"
+  },
+  "intimidate": {
+    "text": "Педро: Да ну нафиг!",
+    "effect": {"guard_encountered": true},
+    "next": "close"
+  },
+  "end": {
+    "text": "Педро: Проходи.",
+    "next": "close"
+  }
+}

@@ -45,12 +45,14 @@ while running:
                     # Если диалог активен и нет вариантов — закрываем
                     if not game.dialog_options:
                         dialog_system.close_dialog()
+                        current_map.reset_all_npcs_timer()
                     continue
 
                 # Если диалог не активен — пытаемся взаимодействовать с миром
                 nx = player_x + facing_direction[0]
                 ny = player_y + facing_direction[1]
                 npc = current_map.get_npc_at(nx, ny)
+
 
                 if npc:
                     dialog_system.load_dialog(npc["dialog_id"])
@@ -59,7 +61,6 @@ while running:
                     if tile_type in (5, 6, 7, 8, 9):
                         current_map.open_door(nx, ny)
                         current_map.reset_npcs_near_door(nx, ny)
-                        print(f"Дверь открыта: {nx}, {ny}")
                     elif tile_type == 2:
                         current_map.close_door(nx, ny)
                         current_map.reset_npcs_near_door(nx, ny)
@@ -111,10 +112,16 @@ while running:
     screen.fill(BLACK)
     current_map.render(screen, 0, 0)
 
-    # Рисуем игрока (только если не в диалоге, чтобы окно его не перекрывало)
-    if not game.dialog_active:
-        player_rect = pygame.Rect(player_x * TILE_SIZE, player_y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-        pygame.draw.rect(screen, GREEN, player_rect)
+    # Игрок всегда виден
+    player_rect = pygame.Rect(player_x * TILE_SIZE, player_y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+    pygame.draw.rect(screen, GREEN, player_rect)
+    # Линия направления (жёлтая, от центра к краю)
+    cx = player_x * TILE_SIZE + TILE_SIZE // 2
+    cy = player_y * TILE_SIZE + TILE_SIZE // 2
+    end_x = cx + facing_direction[0] * 20
+    end_y = cy + facing_direction[1] * 20
+    pygame.draw.line(screen, YELLOW, (cx, cy), (end_x, end_y), 3)
+
 
     # --- Интерфейс ---
     font = pygame.font.Font(None, 24)

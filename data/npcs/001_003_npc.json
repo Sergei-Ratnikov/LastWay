@@ -1,0 +1,7 @@
+{
+  "name": "Карлос",
+  "movement": "patrol",
+  "move_delay_ms": 800,
+  "patrol_points": [[10,8], [8,8], [8,10], [10,10]],
+  "dialog_id": "001_003"
+}

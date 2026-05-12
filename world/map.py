@@ -69,7 +69,8 @@ class Map:
                     "patrol_points": [],
                     "patrol_index": 0,
                     "last_move_time": 0,
-                    "stuck_counter": 0
+                    "stuck_counter": 0,
+                    "facing": npc_info.get("facing", (0, 1)),  # направление взгляда (по умолчанию вниз)
                 })
                 continue
 
@@ -134,10 +135,16 @@ class Map:
         return tile in (5, 6, 7, 8, 9, 2)
 
     def open_door(self, x, y):
+        if x == self.game_state.player["x"] and y == self.game_state.player["y"]:
+            print("Нельзя открыть дверь там, где стоит игрок")
+            return False
+        print(f"open_door({x}, {y}) -> tile = {self.get_tile_type(x, y)}")
         if self.get_tile_type(x, y) in (5, 6, 7, 8, 9):
             self.tiles[y][x] = 2
             self.game_state.set_door_state(x, y, 2)
+            print(f"Дверь {x},{y} успешно открыта")
             return True
+        print(f"Не удалось открыть: не дверь")
         return False
 
     def close_door(self, x, y):
@@ -161,51 +168,6 @@ class Map:
             if npc["x"] == x and npc["y"] == y:
                 return npc
         return None
-
-    def update_npcs(self, current_time, player_x, player_y):
-        """Обновление движения всех NPC"""
-        for npc in self.npcs:
-            if npc["movement"] == "stationary":
-                continue
-
-            if current_time - npc["last_move_time"] < npc["move_delay_ms"]:
-                continue
-
-            new_x, new_y = npc["x"], npc["y"]
-
-            # --- Патруль по точкам ---
-            if npc["movement"] == "patrol" and len(npc["patrol_points"]) > 0:
-                target = npc["patrol_points"][npc["patrol_index"]]
-                dx = 0
-                dy = 0
-                if npc["x"] < target[0]:
-                    dx = 1
-                elif npc["x"] > target[0]:
-                    dx = -1
-                elif npc["y"] < target[1]:
-                    dy = 1
-                elif npc["y"] > target[1]:
-                    dy = -1
-
-                new_x = npc["x"] + dx
-                new_y = npc["y"] + dy
-
-                # Если достигли цели — переключаем индекс
-                if new_x == target[0] and new_y == target[1]:
-                    npc["patrol_index"] = (npc["patrol_index"] + 1) % len(npc["patrol_points"])
-
-            # --- Случайное движение ---
-            elif npc["movement"] == "random":
-                dirs = [(1,0), (-1,0), (0,1), (0,-1)]
-                dx, dy = random.choice(dirs)
-                new_x = npc["x"] + dx
-                new_y = npc["y"] + dy
-
-            # Проверка коллизий
-            if self.is_walkable_for_npc(new_x, new_y, npc):
-                npc["x"] = new_x
-                npc["y"] = new_y
-                npc["last_move_time"] = current_time
 
     def render(self, screen, camera_x, camera_y):
         # Отрисовка тайлов
@@ -244,48 +206,141 @@ class Map:
             font = pygame.font.Font(None, 16)
             name_text = font.render(npc["name"], True, WHITE)
             screen.blit(name_text, (npc["x"] * TILE_SIZE, npc["y"] * TILE_SIZE - 15))
+            # --- Линия направления для NPC
+            if npc.get("movement") != "stationary" and len(npc.get("patrol_points", [])) > 0:
+                patrol_points = npc["patrol_points"]
+                current_index = npc.get("patrol_index", 0)
+                target = patrol_points[current_index]
+                
+                # Определяем координаты цели (если словарь — берём pos)
+                if isinstance(target, dict):
+                    target_x, target_y = target.get("pos", [npc["x"], npc["y"]])
+                else:
+                    target_x, target_y = target[0], target[1]
+                
+                dx = target_x - npc["x"]
+                dy = target_y - npc["y"]
+                if dx != 0:
+                    dx = 1 if dx > 0 else -1
+                if dy != 0:
+                    dy = 1 if dy > 0 else -1
+                
+                cx = npc["x"] * TILE_SIZE + TILE_SIZE // 2
+                cy = npc["y"] * TILE_SIZE + TILE_SIZE // 2
+                end_x = cx + dx * 20
+                end_y = cy + dy * 20
+                pygame.draw.line(screen, (255, 200, 0), (cx, cy), (end_x, end_y), 2)
 
+    def reset_npcs_near_door(self, door_x, door_y):
+        for npc in self.npcs:
+            if abs(npc["x"] - door_x) <= 1 and abs(npc["y"] - door_y) <= 1:
+                npc["last_move_time"] = 0
+
+    def reset_all_npcs_timer(self):
+        for npc in self.npcs:
+            npc["last_move_time"] = 0
 
     def update_npcs(self, current_time, player_x, player_y):
         for npc in self.npcs:
             if npc["movement"] == "stationary":
                 continue
 
-            if current_time - npc["last_move_time"] < npc["move_delay_ms"]:
+            # Задержка движения
+            if current_time - npc.get("last_move_time", 0) < npc.get("move_delay_ms", 1000):
                 continue
 
-            new_x, new_y = npc["x"], npc["y"]
+            # Задержка ожидания (wait)
+            if npc.get("wait_until", 0) > current_time:
+                continue
 
-            if npc["movement"] == "patrol" and len(npc["patrol_points"]) > 0:
-                target = npc["patrol_points"][npc["patrol_index"]]
-                dx = 0
-                dy = 0
-                if npc["x"] < target[0]:
-                    dx = 1
-                elif npc["x"] > target[0]:
-                    dx = -1
-                elif npc["y"] < target[1]:
-                    dy = 1
-                elif npc["y"] > target[1]:
-                    dy = -1
+            # --- ОТКРЫТЬ ДВЕРЬ ПОД СОБОЙ ---
+            tile_below = self.get_tile_type(npc["x"], npc["y"])
+            if tile_below in (5, 6, 7, 8, 9):
+                self.open_door(npc["x"], npc["y"])
+                self.reset_npcs_near_door(npc["x"], npc["y"])
+                print(f"NPC {npc['name']} открыл дверь под собой {npc['x']},{npc['y']}")
+                npc["last_move_time"] = current_time
+                continue
 
-                new_x = npc["x"] + dx
-                new_y = npc["y"] + dy
+            # Получаем текущую цель
+            patrol_points = npc.get("patrol_points", [])
+            if not patrol_points:
+                continue
 
-                if new_x == target[0] and new_y == target[1]:
-                    npc["patrol_index"] = (npc["patrol_index"] + 1) % len(npc["patrol_points"])
+            current_index = npc.get("patrol_index", 0)
+            target = patrol_points[current_index]
 
-            elif npc["movement"] == "random":
-                dirs = [(1,0), (-1,0), (0,1), (0,-1)]
-                for _ in range(4):
-                    dx, dy = random.choice(dirs)
-                    new_x = npc["x"] + dx
-                    new_y = npc["y"] + dy
-                    if self.is_walkable_for_npc(new_x, new_y, npc):
-                        break
-                else:
-                    new_x, new_y = npc["x"], npc["y"]
+            # Определяем координаты цели
+            if isinstance(target, list):
+                target_x, target_y = target[0], target[1]
+                action = None
+            else:
+                target_x = target.get("pos", [npc["x"], npc["y"]])[0]
+                target_y = target.get("pos", [npc["x"], npc["y"]])[1]
+                action = target.get("action")
 
+            # Вычисляем направление к цели
+            dx = 0
+            dy = 0
+            if npc["x"] < target_x:
+                dx = 1
+            elif npc["x"] > target_x:
+                dx = -1
+            elif npc["y"] < target_y:
+                dy = 1
+            elif npc["y"] > target_y:
+                dy = -1
+
+            new_x = npc["x"] + dx
+            new_y = npc["y"] + dy
+
+            # --- ОТКРЫТЬ ДВЕРЬ ПЕРЕД СОБОЙ (по направлению) ---
+            door_ahead_x = npc["x"] + dx
+            door_ahead_y = npc["y"] + dy
+            tile_ahead = self.get_tile_type(door_ahead_x, door_ahead_y)
+            if tile_ahead in (5, 6, 7, 8, 9):
+                self.open_door(door_ahead_x, door_ahead_y)
+                self.reset_npcs_near_door(door_ahead_x, door_ahead_y)
+                print(f"NPC {npc['name']} открыл дверь впереди {door_ahead_x},{door_ahead_y}")
+                npc["last_move_time"] = current_time
+                continue
+
+            # Проверка: если уже стоим на цели ИЛИ сделали шаг и попали
+            already_on_target = (dx == 0 and dy == 0)
+            reached = (new_x == target_x and new_y == target_y)
+
+            if already_on_target or reached:
+                # Выполняем действие, если есть
+                if action:
+                    if action == "open_door":
+                        door_dir = target.get("direction", (0, 0))
+                        door_x = npc["x"] + door_dir[0]
+                        door_y = npc["y"] + door_dir[1]
+                        self.open_door(door_x, door_y)
+                        self.reset_npcs_near_door(door_x, door_y)
+                        print(f"NPC {npc['name']} выполнил open_door {door_x},{door_y}")
+                    elif action == "close_door":
+                        door_dir = target.get("direction", (0, 0))
+                        door_x = npc["x"] + door_dir[0]
+                        door_y = npc["y"] + door_dir[1]
+                        self.close_door(door_x, door_y)
+                        self.reset_npcs_near_door(door_x, door_y)
+                        print(f"NPC {npc['name']} выполнил close_door {door_x},{door_y}")
+                    elif action == "face":
+                        npc["facing"] = target.get("direction", (0, 0))
+                    elif action == "wait":
+                        duration = target.get("duration", 500)
+                        npc["wait_until"] = current_time + duration
+                        npc["last_move_time"] = current_time
+                        continue
+
+                # Переход к следующей точке
+                next_index = (current_index + 1) % len(patrol_points)
+                npc["patrol_index"] = next_index
+                npc["last_move_time"] = current_time
+                continue
+
+            # Движение к цели (проверка коллизий)
             if self.is_walkable_for_npc(new_x, new_y, npc):
                 npc["x"] = new_x
                 npc["y"] = new_y
@@ -294,9 +349,4 @@ class Map:
             else:
                 npc["stuck_counter"] = npc.get("stuck_counter", 0) + 1
                 if npc["stuck_counter"] > 3 and npc["movement"] == "random":
-                    npc["last_move_time"] = current_time - npc["move_delay_ms"] + 50
-
-    def reset_npcs_near_door(self, door_x, door_y):
-        for npc in self.npcs:
-            if abs(npc["x"] - door_x) <= 1 and abs(npc["y"] - door_y) <= 1:
-                npc["last_move_time"] = 0
+                    npc["last_move_time"] = current_time - npc.get("move_delay_ms", 1000) + 50
