@@ -1,0 +1,6 @@
+{
+  "locations": [
+    {"id": "001_hospital", "name": "Госпиталь", "start": true},
+    {"id": "002_monastery", "name": "Монастырь", "start": false}
+  ]
+}
