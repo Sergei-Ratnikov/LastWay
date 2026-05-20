@@ -17,41 +17,42 @@ class DialogSystem:
     переключает узлы диалога и закрывает его.
     """
 
-    def __init__(self, game_state):
+    def __init__(self, game_state, dialogs_dir: str):
         """
         Инициализация системы диалогов.
-
         Аргументы:
             game_state (GameState): Ссылка на глобальное состояние игры.
         """
         self.game_state = game_state
-        self.current_dialog = None      # Текущий загруженный JSON-диалог
-        self.current_npc_id = None      # ID NPC, с которым идёт диалог
+        self.dialogs_dir = dialogs_dir
+        self.current_dialog = None  # Текущий загруженный JSON-диалог
+        self.current_npc_id = None  # ID NPC, с которым идёт диалог
 
     # -------------------------------------------------------------------------
     # ЗАГРУЗКА ДИАЛОГА
     # -------------------------------------------------------------------------
+    
+
+
     def load_dialog(self, dialog_id):
         """
         Загружает диалог из JSON-файла по его ID.
-
         Аргументы:
             dialog_id (str): ID диалога (например, "001_001").
-
         Возвращает:
             bool: True, если загрузка успешна, иначе False.
-
         Примечание:
             Имя файла формируется как {dialog_id}_dia.json.
             Файл должен лежать в папке DIALOGS_DIR (см. settings.py).
         """
-        filename = f"{dialog_id}_dia.json"
-        path = os.path.join(DIALOGS_DIR, filename)
+
+        filename = f"{dialog_id}.json"
+        path = os.path.join(self.dialogs_dir, filename)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 self.current_dialog = json.load(f)
                 self.current_npc_id = dialog_id
-
+                
                 # Активируем режим диалога в глобальном состоянии
                 self.game_state.dialog_active = True
                 self.game_state.dialog_text = self.current_dialog["start"]["text"]
@@ -61,6 +62,11 @@ class DialogSystem:
         except Exception as e:
             print(f"Ошибка загрузки диалога {dialog_id}:", e)
             return False
+
+
+
+
+
 
     # -------------------------------------------------------------------------
     # ОБРАБОТКА ВЫБОРА ИГРОКА

@@ -4,97 +4,66 @@ import pygame
 import os
 import random
 from settings import *
+from world.location_manager import LocationManager
 
 class Map:
 
-    def __init__(self, map_id, game_state):
-        self.map_id = map_id
+    def __init__(self, location_id, game_state, location_manager=None):
+        self.location_id = location_id
         self.game_state = game_state
+        self.location_manager = location_manager or LocationManager()
         self.width = 0
         self.height = 0
         self.tiles = []
-        self.base_tiles = []
         self.npcs = []
-        self.containers = []
-        self.hidden_containers = []
         self.exits = []
         self.player_start = (0, 0)
         self.load()
 
     def load(self):
-        filename = f"{self.map_id}.json"
-        path = os.path.join(MAPS_DIR, filename)
+        data = self.location_manager.get_location_data(self.location_id)
         
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception as e:
-            print(f"Ошибка загрузки карты {filename}:", e)
-            raise Exception(f"Не удалось загрузить карту {filename}")
-
         self.width = data.get("width", 18)
         self.height = data.get("height", 14)
-        self.base_tiles = data.get("tiles", [[1 for x in range(self.width)] for y in range(self.height)])
-        self.tiles = [row[:] for row in self.base_tiles]
-        self.containers = data.get("containers", [])
-        self.hidden_containers = data.get("hidden_containers", [])
-        self.exits = data.get("exits", [])
-        self.player_start = data.get("player_start", [1, 1])
+        self.tiles = data.get("tiles", [])
+        self.npcs = data.get("npcs", [])
 
-        # Загрузка NPC из отдельных файлов
-        self.npcs = []
-        for npc_data in data.get("npcs", []):
-            npc_id = npc_data.get("npc_id")
-            if not npc_id:
-                print("Пропущен NPC: отсутствует npc_id")
-                continue
-                
-            npc_filename = f"{npc_id}_npc.json"
-            npc_path = os.path.join(NPCS_DIR, npc_filename)
-            
+        # Загрузка данных NPC из отдельных файлов
+        npcs_loaded = []
+        for npc_ref in self.npcs:
+            npc_id = npc_ref.get("npc_id") or npc_ref.get("id")
+            npc_path = os.path.join(
+                self.location_manager.get_location_path(self.location_id),
+                "npcs",
+                f"{npc_id}.json"
+            )
             try:
                 with open(npc_path, "r", encoding="utf-8") as f:
-                    npc_info = json.load(f)
+                    npc_data = json.load(f)
             except Exception as e:
-                print(f"Ошибка загрузки NPC {npc_id} из {npc_path}:", e)
-                # Добавляем NPC-заглушку
-                self.npcs.append({
-                    "id": npc_id,
-                    "x": npc_data.get("x", 0),
-                    "y": npc_data.get("y", 0),
-                    "name": "Ошибка загрузки",
-                    "dialog_id": npc_id,
-                    "movement": "stationary",
-                    "move_delay_ms": 1000,
-                    "patrol_points": [],
-                    "patrol_index": 0,
-                    "last_move_time": 0,
-                    "stuck_counter": 0,
-                    "facing": npc_info.get("facing", (0, 1)),  # направление взгляда (по умолчанию вниз)
-                })
+                print(f"Ошибка загрузки NPC {npc_id}: {e}")
                 continue
 
-            self.npcs.append({
+            # Объединяем данные из location.json (координаты) и из файла NPC (параметры)
+            npcs_loaded.append({
                 "id": npc_id,
-                "x": npc_data.get("x", 0),
-                "y": npc_data.get("y", 0),
-                "name": npc_info.get("name", "Незнакомец"),
-                "dialog_id": npc_info.get("dialog_id", npc_id),
-                "movement": npc_info.get("movement", "stationary"),
-                "move_delay_ms": npc_info.get("move_delay_ms", 1000),
-                "patrol_points": npc_info.get("patrol_points", []),
+                "x": npc_ref.get("x", 0),
+                "y": npc_ref.get("y", 0),
+                "name": npc_data.get("name", "Незнакомец"),
+                "dialog_id": npc_data.get("dialog_id", npc_id),
+                "movement": npc_data.get("movement", "stationary"),
+                "move_delay_ms": npc_data.get("move_delay_ms", 1000),
+                "patrol_points": npc_data.get("patrol_points", []),
                 "patrol_index": 0,
                 "last_move_time": 0,
                 "stuck_counter": 0
             })
 
-        # Восстанавливаем состояния дверей из game_state
-        for coord, tile_type in self.game_state.door_states.items():
-            if "," in coord:
-                x_str, y_str = coord.split(",")
-                x, y = int(x_str), int(y_str)
-                if 0 <= x < self.width and 0 <= y < self.height:
-                    self.tiles[y][x] = tile_type
+        self.npcs = npcs_loaded
+
+        self.exits = data.get("exits", [])
+        self.player_start = data.get("player_start", [1, 1])
+
 
     def is_walkable(self, x, y):
         """Проходимость для игрока: пол (1), открытая дверь (2), и нет NPC"""
