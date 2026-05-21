@@ -64,7 +64,6 @@ class Map:
         self.exits = data.get("exits", [])
         self.player_start = data.get("player_start", [1, 1])
 
-
     def is_walkable(self, x, y):
         """Проходимость для игрока: пол (1), открытая дверь (2), и нет NPC"""
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
@@ -139,7 +138,7 @@ class Map:
         return None
 
     def render(self, screen, camera_x, camera_y):
-        # Отрисовка тайлов
+        # 1. Отрисовка тайлов
         for y in range(self.height):
             for x in range(self.width):
                 tile = self.tiles[y][x]
@@ -164,10 +163,19 @@ class Map:
                 else:
                     color = BLACK
 
-                pygame.draw.rect(screen, color, rect)
-                pygame.draw.rect(screen, BLACK, rect, 1)
+                pygame.draw.rect(screen, color, rect)      # ← ЭТО БЫЛО ПРОПУЩЕНО
+                pygame.draw.rect(screen, BLACK, rect, 1)   # рамка
 
-        # Отрисовка NPC
+        # 2. Отрисовка точек выхода (поверх тайлов)
+        for exit_data in self.exits:
+            x = exit_data.get("x")
+            y = exit_data.get("y")
+            if x is not None and y is not None:
+                rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                pygame.draw.rect(screen, EXIT_COLOR, rect)
+                pygame.draw.rect(screen, BLACK, rect, 2)   # толстая рамка
+
+        # 3. Отрисовка NPC (поверх всего)
         for npc in self.npcs:
             rect = pygame.Rect(npc["x"] * TILE_SIZE, npc["y"] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
             pygame.draw.rect(screen, NPC_COLOR, rect)
@@ -175,25 +183,25 @@ class Map:
             font = pygame.font.Font(None, 16)
             name_text = font.render(npc["name"], True, WHITE)
             screen.blit(name_text, (npc["x"] * TILE_SIZE, npc["y"] * TILE_SIZE - 15))
-            # --- Линия направления для NPC
+
+            # Линия направления для NPC
             if npc.get("movement") != "stationary" and len(npc.get("patrol_points", [])) > 0:
                 patrol_points = npc["patrol_points"]
                 current_index = npc.get("patrol_index", 0)
                 target = patrol_points[current_index]
-                
-                # Определяем координаты цели (если словарь — берём pos)
+
                 if isinstance(target, dict):
                     target_x, target_y = target.get("pos", [npc["x"], npc["y"]])
                 else:
                     target_x, target_y = target[0], target[1]
-                
+
                 dx = target_x - npc["x"]
                 dy = target_y - npc["y"]
                 if dx != 0:
                     dx = 1 if dx > 0 else -1
                 if dy != 0:
                     dy = 1 if dy > 0 else -1
-                
+
                 cx = npc["x"] * TILE_SIZE + TILE_SIZE // 2
                 cy = npc["y"] * TILE_SIZE + TILE_SIZE // 2
                 end_x = cx + dx * 20
@@ -319,3 +327,12 @@ class Map:
                 npc["stuck_counter"] = npc.get("stuck_counter", 0) + 1
                 if npc["stuck_counter"] > 3 and npc["movement"] == "random":
                     npc["last_move_time"] = current_time - npc.get("move_delay_ms", 1000) + 50
+
+    def get_exit_at(self, x, y):
+        '''
+        обработка перехода между локациями
+        '''
+        for exit_data in self.exits:
+            if exit_data.get("x") == x and exit_data.get("y") == y:
+                return exit_data
+        return None

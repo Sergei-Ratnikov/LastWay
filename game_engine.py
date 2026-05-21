@@ -174,8 +174,32 @@ class GameEngine:
                 self.game_state.player["y"] = new_y
                 self.last_move_time = current_time
 
+        # обработка точки перехода в другую локацию
+        exit_point = self.current_map.get_exit_at(self.game_state.player["x"], self.game_state.player["y"])
+        if exit_point:
+            self.switch_location(exit_point["target_location"], exit_point["target_exit_id"])
+            return
+
         # ----- Движение NPC -----
         self.current_map.update_npcs(current_time, self.game_state.player["x"], self.game_state.player["y"])
+
+    # -------------------------------------------------------------------------
+    # ПЕРЕХОД МЕЖДУ ЛОКАЦИЯМИ
+    # -------------------------------------------------------------------------
+    def switch_location(self, target_location_id, target_exit_id):
+        # Сохраняем состояние текущей локации (если нужно)
+        # Загружаем новую локацию
+        self.current_map = Map(target_location_id, self.game_state, self.location_manager)
+        
+        # Находим выход, на который нужно поставить игрока
+        for exit_data in self.current_map.exits:
+            if exit_data.get("id") == target_exit_id:
+                self.game_state.player["x"] = exit_data["spawn_x"]
+                self.game_state.player["y"] = exit_data["spawn_y"]
+                break
+        
+        # Сбрасываем таймер движения
+        self.last_move_time = pygame.time.get_ticks()
 
     # -------------------------------------------------------------------------
     # ОТРИСОВКА
