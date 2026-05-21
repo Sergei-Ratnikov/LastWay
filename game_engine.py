@@ -6,7 +6,7 @@ from game_state import GameState
 from world.map import Map
 from systems.dialog_system import DialogSystem
 from world.location_manager import LocationManager
-
+from input_handler import InputHandler
 
 class GameEngine:
     """Главный игровой движок. Управляет циклом, событиями, обновлением и отрисовкой."""
@@ -29,16 +29,7 @@ class GameEngine:
 
         # Состояние и системы
         self.game_state = game_state if game_state else GameState()
-
         self.location_manager = LocationManager()
-        
-        dialogs_dir = os.path.join(
-            self.location_manager.get_location_path(location_id),
-            "dialogs"
-        )
-        self.dialog_system = DialogSystem(self.game_state, dialogs_dir)
-
-        
         self.current_map = Map(location_id, self.game_state, self.location_manager)
 
         # Определяем путь к папке диалогов текущей локации
@@ -55,6 +46,9 @@ class GameEngine:
         # Временно, пока нет выбора класса
         if not self.game_state.player["class"]:
             self.game_state.player["class"] = "Идальго"
+
+        # Обработчик ввода
+        self.input_handler = InputHandler()
 
         # Переменные движения
         self.last_move_time = 0
@@ -89,56 +83,80 @@ class GameEngine:
     # -------------------------------------------------------------------------
     # ОБРАБОТКА СОБЫТИЙ
     # -------------------------------------------------------------------------
+
     def handle_events(self):
-        """Обрабатывает все события клавиатуры и закрытия окна."""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
                 self.exit_code = "exit"
+            
+            command = self.input_handler.handle_event(event, self.game_state, self.current_map)
+            if command:
+                self._process_command(command)
 
-            if event.type == pygame.KEYDOWN:
-                # ESCAPE: закрыть диалог или выйти
-                if event.key == pygame.K_ESCAPE:
-                    if self.game_state.dialog_active:
-                        self.dialog_system.close_dialog()
-                        self.current_map.reset_all_npcs_timer()
-                    else:
-                        self.running = False
-                        self.exit_code = "exit"
+    def _process_command(self, command):
+        """Обрабатывает команды от InputHandler."""
+        if isinstance(command, tuple):
+            cmd_type = command[0]
 
-                # E: взаимодействие
-                if event.key == pygame.K_e:
-                    if self.game_state.dialog_active:
-                        if not self.game_state.dialog_options:
-                            self.dialog_system.close_dialog()
-                            self.current_map.reset_all_npcs_timer()
-                        continue
+            if cmd_type == "dialog_choice":
+                choice_index = command[1]
+                self.dialog_system.choose_option(choice_index)            
+            elif cmd_type == "interact_npc":
+                dialog_id = command[1]
+                self.dialog_system.load_dialog(dialog_id)
+            elif cmd_type == "interact_door":
+                door_x, door_y = command[1]
+                tile_type = self.current_map.get_tile_type(door_x, door_y)
+                if tile_type in (5, 6, 7, 8, 9):
+                    self.current_map.open_door(door_x, door_y)
+                    self.current_map.reset_npcs_near_door(door_x, door_y)
+                elif tile_type == 2:
+                    self.current_map.close_door(door_x, door_y)
+                    self.current_map.reset_npcs_near_door(door_x, door_y)
+            
+            elif cmd_type == "move_to":
+                target_x, target_y = command[1]
+                # Пока просто шаг, если цель — соседняя клетка
+                dx = target_x - self.game_state.player["x"]
+                dy = target_y - self.game_state.player["y"]
+                if abs(dx) + abs(dy) == 1:
+                    new_x = self.game_state.player["x"] + dx
+                    new_y = self.game_state.player["y"] + dy
+                    if self.current_map.is_walkable(new_x, new_y):
+                        self.game_state.player["x"] = new_x
+                        self.game_state.player["y"] = new_y
+        else:
+            if command == "interact":
+                self._interact()
+            elif command == "menu":
+                if self.game_state.dialog_active:
+                    self.dialog_system.close_dialog()
+                else:
+                    self.running = False
+            elif command == "open_inventory":
+                # TODO: открыть инвентарь
+                pass
+            elif command == "context_menu":
+                # TODO: контекстное меню
+                pass
 
-                    nx = self.game_state.player["x"] + self.facing_direction[0]
-                    ny = self.game_state.player["y"] + self.facing_direction[1]
-                    npc = self.current_map.get_npc_at(nx, ny)
-
-                    if npc:
-                        self.dialog_system.load_dialog(npc["dialog_id"])
-                    else:
-                        tile_type = self.current_map.get_tile_type(nx, ny)
-                        if tile_type in (5, 6, 7, 8, 9):
-                            self.current_map.open_door(nx, ny)
-                            self.current_map.reset_npcs_near_door(nx, ny)
-                        elif tile_type == 2:
-                            self.current_map.close_door(nx, ny)
-                            self.current_map.reset_npcs_near_door(nx, ny)
-
-                # Цифры 1-4: выбор в диалоге
-                if self.game_state.dialog_active and self.game_state.dialog_options:
-                    if event.key == pygame.K_1:
-                        self.dialog_system.choose_option(0)
-                    elif event.key == pygame.K_2:
-                        self.dialog_system.choose_option(1)
-                    elif event.key == pygame.K_3:
-                        self.dialog_system.choose_option(2)
-                    elif event.key == pygame.K_4:
-                        self.dialog_system.choose_option(3)
+    def _interact(self):
+        """Взаимодействие с тем, что перед игроком."""
+        nx = self.game_state.player["x"] + self.facing_direction[0]
+        ny = self.game_state.player["y"] + self.facing_direction[1]
+        npc = self.current_map.get_npc_at(nx, ny)
+        
+        if npc:
+            self.dialog_system.load_dialog(npc["dialog_id"])
+        else:
+            tile_type = self.current_map.get_tile_type(nx, ny)
+            if tile_type in (5, 6, 7, 8, 9):
+                self.current_map.open_door(nx, ny)
+                self.current_map.reset_npcs_near_door(nx, ny)
+            elif tile_type == 2:
+                self.current_map.close_door(nx, ny)
+                self.current_map.reset_npcs_near_door(nx, ny)
 
     # -------------------------------------------------------------------------
     # ОБНОВЛЕНИЕ (логика)
