@@ -19,6 +19,10 @@ class GameEngine:
             map_id (str): ID локации для загрузки (например, "001_map_hospital")
             game_state (GameState, optional): Состояние игры. Если None, создаётся новое.
         """
+
+        self.temp_message = None
+        self.temp_message_timer = 0
+
         # Инициализация Pygame (если ещё не инициализирована)
         if not pygame.get_init():
             pygame.init()
@@ -93,9 +97,14 @@ class GameEngine:
             command = self.input_handler.handle_event(event, self.game_state, self.current_map)
             if command:
                 self._process_command(command)
-
+    
     def _process_command(self, command):
-        """Обрабатывает команды от InputHandler."""
+        """
+        Обрабатывает команды от InputHandler
+        """
+        
+        print(f"DEBUG game_engine.py: получена команда {command}")
+
         if isinstance(command, tuple):
             cmd_type = command[0]
 
@@ -114,7 +123,19 @@ class GameEngine:
                 elif tile_type == 2:
                     self.current_map.close_door(door_x, door_y)
                     self.current_map.reset_npcs_near_door(door_x, door_y)
-            
+            elif cmd_type == "interact_container":
+                container_id = command[1]
+                # Находим контейнер
+                for container in self.current_map.containers:
+                    if container.id == container_id:
+                        if container.locked:
+                            self._show_message("Контейнер заперт")
+                        elif not container.is_open:
+                            container.open()
+                            self._show_message(f"Ты открыл {container.name}. Внутри: {', '.join(container.items) if container.items else 'пусто'}")
+                        else:
+                            self._show_message(f"{container.name} уже открыт")
+                        break
             elif cmd_type == "move_to":
                 target_x, target_y = command[1]
                 # Пока просто шаг, если цель — соседняя клетка
@@ -126,6 +147,20 @@ class GameEngine:
                     if self.current_map.is_walkable(new_x, new_y):
                         self.game_state.player["x"] = new_x
                         self.game_state.player["y"] = new_y
+            elif cmd_type == "interact_container":
+                container_id = command[1]
+                for container in self.current_map.containers:
+                    if container.id == container_id:
+                        if container.locked:
+                            self._show_message("Контейнер заперт")
+                        elif not container.is_open:
+                            container.open()
+                            items_text = ', '.join(container.items) if container.items else "пусто"
+                            self._show_message(f"Ты открыл {container.name}. Внутри: {items_text}")
+                        else:
+                            self._show_message(f"{container.name} уже открыт")
+                        break
+
         else:
             if command == "interact":
                 self._interact()
@@ -276,3 +311,25 @@ class GameEngine:
             if not self.game_state.dialog_options:
                 close_hint = font.render("Нажми E или ESC, чтобы продолжить", True, (150, 150, 150))
                 self.screen.blit(close_hint, (55, HEIGHT - 60))
+
+        # Временное сообщение (например, от контейнера)
+        if self.temp_message:
+            current_time = pygame.time.get_ticks()
+            if current_time - self.temp_message_timer < 2000:  # показываем 2 секунды
+                font = pygame.font.Font(None, 28)
+                text_surf = font.render(self.temp_message, True, WHITE)
+                text_rect = text_surf.get_rect(center=(WIDTH // 2, HEIGHT - 100))
+                
+                # Фон под сообщением
+                bg_rect = text_rect.inflate(20, 10)
+                pygame.draw.rect(self.screen, BLACK, bg_rect)
+                pygame.draw.rect(self.screen, WHITE, bg_rect, 2)
+                
+                self.screen.blit(text_surf, text_rect)
+            else:
+                self.temp_message = None
+
+    def _show_message(self, text):
+        """Показывает временное сообщение (например, при открытии контейнера)."""
+        self.temp_message = text
+        self.temp_message_timer = pygame.time.get_ticks()

@@ -17,6 +17,7 @@ class Map:
         self.tiles = []
         self.npcs = []
         self.exits = []
+        self.containers = []  # список объектов Container
         self.player_start = (0, 0)
         self.load()
 
@@ -27,6 +28,24 @@ class Map:
         self.height = data.get("height", 14)
         self.tiles = data.get("tiles", [])
         self.npcs = data.get("npcs", [])
+
+        # Загрузка контейнеров
+        for container_data in data.get("containers", []):
+            from entities.container import Container
+            container = Container(
+                container_id=container_data.get("id"),
+                x=container_data.get("x"),
+                y=container_data.get("y"),
+                name=container_data.get("name", "Сундук"),
+                locked=container_data.get("locked", False),
+                items=container_data.get("items", [])
+            )
+            self.containers.append(container)
+
+        # print(f"Загружено контейнеров: {len(self.containers)}")
+        # for c in self.containers:
+        #     print(f"  {c.id} at ({c.x}, {c.y})")
+
 
         # Загрузка данных NPC из отдельных файлов
         npcs_loaded = []
@@ -69,10 +88,10 @@ class Map:
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
             return False
         
-        # Нельзя проходить сквозь NPC
-        if self.get_npc_at(x, y) is not None:
+        # Нельзя проходить сквозь NPC и контейнеры
+        if self.get_npc_at(x, y) or self.get_container_at(x, y):
             return False
-        
+
         tile = self.tiles[y][x]
         return tile == 1 or tile == 2
 
@@ -89,10 +108,13 @@ class Map:
         if self.game_state.player["x"] == x and self.game_state.player["y"] == y:
             return False
 
-        # Нельзя проходить сквозь других NPC
+        # Нельзя проходить сквозь других NPC и контейнеры
         for npc in self.npcs:
             if npc != current_npc and npc["x"] == x and npc["y"] == y:
                 return False
+
+            if self.get_container_at(x, y):
+                    return False
 
         return True
 
@@ -175,7 +197,25 @@ class Map:
                 pygame.draw.rect(screen, EXIT_COLOR, rect)
                 pygame.draw.rect(screen, BLACK, rect, 2)   # толстая рамка
 
-        # 3. Отрисовка NPC (поверх всего)
+        # 3. Отрисовка контейнеров
+        for container in self.containers:
+            if container.is_destroyed:
+                continue
+            rect = pygame.Rect(container.x * TILE_SIZE, container.y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+            # Цвет: замок и состояние
+            if container.locked:
+                color = (150, 50, 0)  # тёмно-оранжевый
+            elif container.is_open:
+                color = (180, 120, 50)  # светло-коричневый
+            else:
+                color = (120, 80, 30)  # коричневый
+            pygame.draw.rect(screen, color, rect)
+            pygame.draw.rect(screen, BLACK, rect, 2)
+            font = pygame.font.Font(None, 16)
+            name_text = font.render(container.name, True, WHITE)
+            screen.blit(name_text, (container.x * TILE_SIZE, container.y * TILE_SIZE - 15))
+
+        # 4. Отрисовка NPC (поверх всего)
         for npc in self.npcs:
             rect = pygame.Rect(npc["x"] * TILE_SIZE, npc["y"] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
             pygame.draw.rect(screen, NPC_COLOR, rect)
@@ -335,4 +375,10 @@ class Map:
         for exit_data in self.exits:
             if exit_data.get("x") == x and exit_data.get("y") == y:
                 return exit_data
+        return None
+    
+    def get_container_at(self, x, y):
+        for container in self.containers:
+            if container.x == x and container.y == y and not container.is_destroyed:
+                return container
         return None

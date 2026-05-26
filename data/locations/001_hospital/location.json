@@ -36,7 +36,20 @@
     "y": 10
   }
 ],
-"containers": [],
+
+
+"containers": [
+  {
+    "id": "chest_01",
+    "x": 5,
+    "y": 3,
+    "name": "Старый сундук",
+    "locked": true,
+    "items": ["key_01", "note_02"]
+  }
+],
+
+
 "hidden_containers": [],
 "exits": [
   {

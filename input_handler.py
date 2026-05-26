@@ -1,3 +1,4 @@
+# input_handler.py
 import pygame
 from settings import TILE_SIZE
 
@@ -56,19 +57,24 @@ class InputHandler:
             target_x = mouse_x // TILE_SIZE
             target_y = mouse_y // TILE_SIZE
             
-            # Проверяем, есть ли NPC в этой клетке
+            # 1. NPC
             npc = current_map.get_npc_at(target_x, target_y)
             if npc:
                 return ("interact_npc", npc["dialog_id"])
             
-            # Дверь
-            elif current_map.is_door(target_x, target_y):
+            # 2. Контейнер
+            container = current_map.get_container_at(target_x, target_y)
+            if container:
+                print(f"input_handler.py - Найден контейнер: {container.id}")
+                return ("interact_container", container.id)
+            
+            # 3. Дверь
+            if current_map.is_door(target_x, target_y):
                 return ("interact_door", (target_x, target_y))
-
-            else:
-                return ("move_to", (target_x, target_y))
-
-
+            
+            # 4. Движение
+            return ("move_to", (target_x, target_y))
+        
         elif event.button == 3:  # ПКМ
             return "context_menu"
         
