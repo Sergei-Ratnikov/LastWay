@@ -1,0 +1,10 @@
+{
+  "0": {"name": "каменная стена", "walkable": false, "color": [40,40,40]},
+  "1": {"name": "каменный пол", "walkable": true, "speed_modifier": 1.0, "color": [150,150,150]},
+  "2": {"name": "открытая дверь", "walkable": true, "is_door": true, "speed_modifier": 1.0, "color": [60,40,100]},
+  "5": {"name": "закрытая дверь", "walkable": false, "is_door": true, "color": [60,40,150]},
+  "6": {"name": "разрушаемая дверь", "walkable": false, "is_door": true, "breakable": true, "color": [70,30,10]},
+  "7": {"name": "секретная дверь", "walkable": false, "is_door": true, "secret": true, "color": [40,40,40]},
+  "8": {"name": "разрушаемая стена", "walkable": false, "breakable": true, "color": [40,40,40]},
+  "9": {"name": "дверь на засове", "walkable": false, "is_door": true, "color": [40,40,40]}
+}

@@ -5,6 +5,7 @@ import os
 import random
 from settings import *
 from world.location_manager import LocationManager
+from world.tile_data import TileData
 
 class Map:
 
@@ -19,6 +20,7 @@ class Map:
         self.exits = []
         self.containers = []  # список объектов Container
         self.player_start = (0, 0)
+        self.tile_data = TileData()
         self.load()
 
     def load(self):
@@ -93,36 +95,47 @@ class Map:
             return False
 
         tile = self.tiles[y][x]
-        return tile == 1 or tile == 2
+        return self.tile_data.is_walkable(tile)
 
     def is_walkable_for_npc(self, x, y, current_npc):
-        """Проходимость для NPC: пол (1), открытая дверь (2), нет игрока, нет других NPC"""
+        """
+        Проверяет, может ли NPC войти в клетку (x, y).
+        Условия:
+        - координаты в пределах карты
+        - тайл проходим (по данным из tiles.json)
+        - в клетке нет игрока
+        - в клетке нет другого NPC (кроме себя)
+        - в клетке нет контейнера
+        """
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
             return False
 
+        # Проверка тайла через tile_data
         tile = self.tiles[y][x]
-        if tile not in (1, 2):
+        if not self.tile_data.is_walkable(tile):
             return False
 
         # Нельзя проходить сквозь игрока
         if self.game_state.player["x"] == x and self.game_state.player["y"] == y:
             return False
 
-        # Нельзя проходить сквозь других NPC и контейнеры
+        # Нельзя проходить сквозь других NPC
         for npc in self.npcs:
             if npc != current_npc and npc["x"] == x and npc["y"] == y:
                 return False
 
-            if self.get_container_at(x, y):
-                    return False
+        # Нельзя проходить сквозь контейнеры
+        if self.get_container_at(x, y) is not None:
+            return False
 
         return True
 
     def is_door(self, x, y):
-        if x < 0 or x >= self.width or y < 0 or y >= self.height:
+        tile = self.get_tile_type(x, y)
+        if tile is None:
             return False
-        tile = self.tiles[y][x]
-        return tile in (5, 6, 7, 8, 9, 2)
+        prop = self.tile_data.get(tile)
+        return prop.get("is_door", False) if prop else False
 
     def open_door(self, x, y):
         if x == self.game_state.player["x"] and y == self.game_state.player["y"]:
@@ -166,22 +179,9 @@ class Map:
                 tile = self.tiles[y][x]
                 rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
 
-                if tile == 0:
-                    color = DARK_GREY
-                elif tile == 1:
-                    color = LIGHT_GREY
-                elif tile == 2:
-                    color = BROWN
-                elif tile == 5:
-                    color = (100, 50, 0)
-                elif tile == 6:
-                    color = (120, 60, 0)
-                elif tile == 7:
-                    color = (80, 80, 120)
-                elif tile == 8:
-                    color = (90, 45, 20)
-                elif tile == 9:
-                    color = (70, 40, 10)
+                prop = self.tile_data.get(tile)
+                if prop and "color" in prop:
+                    color = tuple(prop["color"])
                 else:
                     color = BLACK
 

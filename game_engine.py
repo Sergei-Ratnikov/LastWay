@@ -177,21 +177,37 @@ class GameEngine:
                 pass
 
     def _interact(self):
-        """Взаимодействие с тем, что перед игроком."""
+        """Взаимодействие с тем, что перед игроком (по клавише E)."""
         nx = self.game_state.player["x"] + self.facing_direction[0]
         ny = self.game_state.player["y"] + self.facing_direction[1]
-        npc = self.current_map.get_npc_at(nx, ny)
         
+        # 1. NPC
+        npc = self.current_map.get_npc_at(nx, ny)
         if npc:
             self.dialog_system.load_dialog(npc["dialog_id"])
-        else:
-            tile_type = self.current_map.get_tile_type(nx, ny)
-            if tile_type in (5, 6, 7, 8, 9):
-                self.current_map.open_door(nx, ny)
-                self.current_map.reset_npcs_near_door(nx, ny)
-            elif tile_type == 2:
-                self.current_map.close_door(nx, ny)
-                self.current_map.reset_npcs_near_door(nx, ny)
+            return
+        
+        # 2. Контейнер
+        container = self.current_map.get_container_at(nx, ny)
+        if container:
+            if container.locked:
+                self._show_message("Контейнер заперт")
+            elif not container.is_open:
+                container.open()
+                items_text = ', '.join(container.items) if container.items else "пусто"
+                self._show_message(f"Ты открыл {container.name}. Внутри: {items_text}")
+            else:
+                self._show_message(f"{container.name} уже открыт")
+            return
+        
+        # 3. Дверь
+        tile_type = self.current_map.get_tile_type(nx, ny)
+        if tile_type in (5, 6, 7, 8, 9):
+            self.current_map.open_door(nx, ny)
+            self.current_map.reset_npcs_near_door(nx, ny)
+        elif tile_type == 2:
+            self.current_map.close_door(nx, ny)
+            self.current_map.reset_npcs_near_door(nx, ny)
 
     # -------------------------------------------------------------------------
     # ОБНОВЛЕНИЕ (логика)
