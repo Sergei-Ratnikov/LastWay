@@ -18,7 +18,8 @@ class Map:
         self.tiles = []
         self.npcs = []
         self.exits = []
-        self.containers = []  # список объектов Container
+        self.containers = []    # список объектов Container - entities/container.py
+        self.drops = []         # список объектов ItemDrop - entities/drop.py
         self.player_start = (0, 0)
         self.tile_data = TileData()
         self.load()
@@ -43,6 +44,18 @@ class Map:
                 items=container_data.get("items", [])
             )
             self.containers.append(container)
+
+        # Загрузка дропов
+        for drop_data in data.get("drops", []):
+            from entities.drop import ItemDrop
+            drop = ItemDrop(
+                drop_id=drop_data.get("id"),
+                x=drop_data.get("x"),
+                y=drop_data.get("y"),
+                items=drop_data.get("items", [])
+            )
+            self.drops.append(drop)
+
 
         # print(f"Загружено контейнеров: {len(self.containers)}")
         # for c in self.containers:
@@ -86,7 +99,9 @@ class Map:
         self.player_start = data.get("player_start", [1, 1])
 
     def is_walkable(self, x, y):
-        """Проходимость для игрока: пол (1), открытая дверь (2), и нет NPC"""
+        """
+        Проходимость для игрока: пол (1), открытая дверь (2), и нет NPC
+        """
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
             return False
         
@@ -215,7 +230,22 @@ class Map:
             name_text = font.render(container.name, True, WHITE)
             screen.blit(name_text, (container.x * TILE_SIZE, container.y * TILE_SIZE - 15))
 
-        # 4. Отрисовка NPC (поверх всего)
+
+        # 4. Отрисовка дропов (предметов на земле)
+        for drop in self.drops:
+            if drop.is_empty:
+                continue
+            rect = pygame.Rect(drop.x * TILE_SIZE, drop.y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+            # Временно жёлтый цвет, потом заменишь на иконку
+            pygame.draw.rect(screen, (255, 255, 100), rect)
+            pygame.draw.rect(screen, BLACK, rect, 2)
+            # Маленький текст с количеством предметов
+            font = pygame.font.Font(None, 14)
+            count_text = font.render(str(len(drop.items)), True, BLACK)
+            screen.blit(count_text, (drop.x * TILE_SIZE + 18, drop.y * TILE_SIZE + 15))
+
+
+        # 5. Отрисовка NPC (поверх всего)
         for npc in self.npcs:
             rect = pygame.Rect(npc["x"] * TILE_SIZE, npc["y"] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
             pygame.draw.rect(screen, NPC_COLOR, rect)
@@ -381,4 +411,11 @@ class Map:
         for container in self.containers:
             if container.x == x and container.y == y and not container.is_destroyed:
                 return container
+        return None
+
+    def get_drop_at(self, x, y):
+        '''Возвращает кучу предметов в клетке (x, y) или None'''
+        for drop in self.drops:
+            if drop.x == x and drop.y == y and not drop.is_empty:
+                return drop
         return None

@@ -68,11 +68,16 @@ class InputHandler:
                 print(f"input_handler.py - Найден контейнер: {container.id}")
                 return ("interact_container", container.id)
             
-            # 3. Дверь
+            # 3. Дроп (предметы на земле)
+            drop = current_map.get_drop_at(target_x, target_y)
+            if drop:
+                return ("interact_drop", drop.id)
+
+            # 4. Дверь
             if current_map.is_door(target_x, target_y):
                 return ("interact_door", (target_x, target_y))
             
-            # 4. Движение
+            # 5. Движение
             return ("move_to", (target_x, target_y))
         
         elif event.button == 3:  # ПКМ

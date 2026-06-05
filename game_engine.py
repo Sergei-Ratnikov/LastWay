@@ -136,6 +136,15 @@ class GameEngine:
                         else:
                             self._show_message(f"{container.name} уже открыт")
                         break
+            elif cmd_type == "interact_drop":
+                drop_id = command[1]
+                for drop in self.current_map.drops:
+                    if drop.id == drop_id and not drop.is_empty:
+                        # Пока просто показываем сообщение
+                        items_text = ', '.join(drop.items) if drop.items else "пусто"
+                        self._show_message(f"На земле: {items_text}")
+                        # TODO: позже добавим подбор в инвентарь
+                        break
             elif cmd_type == "move_to":
                 target_x, target_y = command[1]
                 # Пока просто шаг, если цель — соседняя клетка
@@ -177,7 +186,31 @@ class GameEngine:
                 pass
 
     def _interact(self):
-        """Взаимодействие с тем, что перед игроком (по клавише E)."""
+        '''
+        Взаимодействие с тем, что перед игроком (по клавише E).
+        
+        отвечает за взаимодействие игрока с объектом, находящимся непосредственно перед ним 
+        (на соседней клетке в направлении взгляда)
+        
+
+        Определяет клетку перед игроком
+        Берёт текущие координаты игрока (player["x"], player["y"])
+        Добавляет направление взгляда (facing_direction)
+        Получает координаты (nx, ny) — клетка, на которую смотрит игрок
+        Проверяет, есть ли там NPC
+        Если да → запускает диалог (dialog_system.load_dialog)
+        Выходит из метода (дальше не проверяет)
+        Если NPC нет — проверяет, есть ли контейнер
+        Если да → открывает его или показывает сообщение (заперт / уже открыт / содержимое)
+        Выходит
+        Если контейнера нет — проверяет, есть ли дроп (предметы на земле)
+        Если да → показывает сообщение с содержимым (_show_message)
+        Выходит
+        Если дропа нет — проверяет, есть ли дверь
+        Если дверь закрыта (типы 5-9) → открывает
+        Если дверь открыта (тип 2) → закрывает
+
+        '''
         nx = self.game_state.player["x"] + self.facing_direction[0]
         ny = self.game_state.player["y"] + self.facing_direction[1]
         
@@ -200,7 +233,15 @@ class GameEngine:
                 self._show_message(f"{container.name} уже открыт")
             return
         
-        # 3. Дверь
+        # 3. Дроп (предметы на земле)
+        drop = self.current_map.get_drop_at(nx, ny)
+        if drop:
+            items_text = ', '.join(drop.items) if drop.items else "пусто"
+            self._show_message(f"На земле: {items_text}")
+            # TODO: позже добавим подбор в инвентарь
+            return
+
+        # 4. Дверь
         tile_type = self.current_map.get_tile_type(nx, ny)
         if tile_type in (5, 6, 7, 8, 9):
             self.current_map.open_door(nx, ny)

@@ -50,6 +50,22 @@
 ],
 
 
+"drops": [
+  {
+    "id": "drop_001",
+    "x": 10,
+    "y": 10,
+    "items": ["key_01", "apple"]
+  },
+  {
+    "id": "drop_002",
+    "x": 3,
+    "y": 5,
+    "items": ["note_02"]
+  }
+],
+
+
 "hidden_containers": [],
 "exits": [
   {
