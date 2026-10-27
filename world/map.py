@@ -20,6 +20,7 @@ class Map:
         self.exits = []
         self.containers = []    # список объектов Container - entities/container.py
         self.drops = []         # список объектов ItemDrop - entities/drop.py
+        self.cats = []          # кошка - entities/cat.py
         self.player_start = (0, 0)
         self.tile_data = TileData()
         self.load()
@@ -55,6 +56,19 @@ class Map:
                 items=drop_data.get("items", [])
             )
             self.drops.append(drop)
+
+        # Загрузка кошек (эмерджентные NPC)
+        for cat_data in data.get("cats", []):
+            from entities.cat import Cat
+            cat = Cat(
+                cat_id=cat_data.get("id"),
+                x=cat_data.get("x"),
+                y=cat_data.get("y"),
+                food_pos=cat_data.get("food_pos"),
+                bed_pos=cat_data.get("bed_pos"),
+                toy_pos=cat_data.get("toy_pos")
+            )
+            self.cats.append(cat)
 
 
         # print(f"Загружено контейнеров: {len(self.containers)}")
@@ -143,6 +157,20 @@ class Map:
         if self.get_container_at(x, y) is not None:
             return False
 
+        return True
+
+    def is_walkable_for_cat(self, x, y):
+        if x < 0 or x >= self.width or y < 0 or y >= self.height:
+            return False
+        tile = self.tiles[y][x]
+        if not self.tile_data.is_walkable(tile):
+            return False
+        # Кошка не может проходить сквозь NPC и игрока
+        if self.get_npc_at(x, y) is not None:
+            return False
+        if self.game_state.player["x"] == x and self.game_state.player["y"] == y:
+            return False
+        # Дропы и контейнеры НЕ блокируют кошку
         return True
 
     def is_door(self, x, y):
@@ -243,6 +271,47 @@ class Map:
             font = pygame.font.Font(None, 14)
             count_text = font.render(str(len(drop.items)), True, BLACK)
             screen.blit(count_text, (drop.x * TILE_SIZE + 18, drop.y * TILE_SIZE + 15))
+
+
+        # Отрисовка кошек
+        for cat in self.cats:
+            rect = pygame.Rect(cat.x * TILE_SIZE, cat.y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+            pygame.draw.rect(screen, (255, 180, 100), rect)
+            pygame.draw.rect(screen, BLACK, rect, 2)
+
+            # Три цифры потребностей (голод, энергия, скука)
+            font = pygame.font.Font(None, 14)
+            needs_text = font.render(
+                f"{cat.hunger} {cat.energy} {cat.boredom}",
+                True, BLACK
+            )
+            screen.blit(needs_text, (cat.x * TILE_SIZE + 2, cat.y * TILE_SIZE + 18))
+
+
+        # Отрисовка точек интереса кошек (для отладки)
+        for cat in self.cats:
+            font = pygame.font.Font(None, 14)
+            
+            if cat.food_pos:
+                fx, fy = cat.food_pos
+                rect = pygame.Rect(fx * TILE_SIZE, fy * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                pygame.draw.rect(screen, (100, 255, 100), rect, 2)  # зелёная рамка
+                label = font.render("еда", True, (100, 255, 100))
+                screen.blit(label, (fx * TILE_SIZE + 4, fy * TILE_SIZE + 4))
+            
+            if cat.bed_pos:
+                bx, by = cat.bed_pos
+                rect = pygame.Rect(bx * TILE_SIZE, by * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                pygame.draw.rect(screen, (100, 100, 255), rect, 2)  # синяя рамка
+                label = font.render("сон", True, (100, 100, 255))
+                screen.blit(label, (bx * TILE_SIZE + 4, by * TILE_SIZE + 4))
+            
+            if cat.toy_pos:
+                tx, ty = cat.toy_pos
+                rect = pygame.Rect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                pygame.draw.rect(screen, (255, 255, 100), rect, 2)  # жёлтая рамка
+                label = font.render("игра", True, (255, 255, 100))
+                screen.blit(label, (tx * TILE_SIZE + 4, ty * TILE_SIZE + 4))
 
 
         # 5. Отрисовка NPC (поверх всего)
@@ -398,6 +467,12 @@ class Map:
                 if npc["stuck_counter"] > 3 and npc["movement"] == "random":
                     npc["last_move_time"] = current_time - npc.get("move_delay_ms", 1000) + 50
 
+    def update_cats(self, current_time):
+        for cat in self.cats:
+            cat.update_needs(current_time)
+            cat.decide_action(self)
+            cat.move_towards_target(self, current_time)  # ← передаём время
+
     def get_exit_at(self, x, y):
         '''
         обработка перехода между локациями
@@ -418,4 +493,10 @@ class Map:
         for drop in self.drops:
             if drop.x == x and drop.y == y and not drop.is_empty:
                 return drop
+        return None
+
+    def get_cat_at(self, x, y):
+        for cat in self.cats:
+            if cat.x == x and cat.y == y:
+                return cat
         return None

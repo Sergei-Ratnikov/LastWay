@@ -37,6 +37,16 @@
   }
 ],
 
+"cats": [
+  {
+    "id": "cat_01",
+    "x": 5,
+    "y": 5,
+    "food_pos": [3, 3],
+    "bed_pos": [8, 4],
+    "toy_pos": [6, 7]
+  }
+],
 
 "containers": [
   {

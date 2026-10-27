@@ -97,12 +97,8 @@ class GameEngine:
             command = self.input_handler.handle_event(event, self.game_state, self.current_map)
             if command:
                 self._process_command(command)
-    
+
     def _process_command(self, command):
-        """
-        Обрабатывает команды от InputHandler
-        """
-        
         print(f"DEBUG game_engine.py: получена команда {command}")
 
         if isinstance(command, tuple):
@@ -110,44 +106,12 @@ class GameEngine:
 
             if cmd_type == "dialog_choice":
                 choice_index = command[1]
-                self.dialog_system.choose_option(choice_index)            
-            elif cmd_type == "interact_npc":
-                dialog_id = command[1]
-                self.dialog_system.load_dialog(dialog_id)
-            elif cmd_type == "interact_door":
-                door_x, door_y = command[1]
-                tile_type = self.current_map.get_tile_type(door_x, door_y)
-                if tile_type in (5, 6, 7, 8, 9):
-                    self.current_map.open_door(door_x, door_y)
-                    self.current_map.reset_npcs_near_door(door_x, door_y)
-                elif tile_type == 2:
-                    self.current_map.close_door(door_x, door_y)
-                    self.current_map.reset_npcs_near_door(door_x, door_y)
-            elif cmd_type == "interact_container":
-                container_id = command[1]
-                # Находим контейнер
-                for container in self.current_map.containers:
-                    if container.id == container_id:
-                        if container.locked:
-                            self._show_message("Контейнер заперт")
-                        elif not container.is_open:
-                            container.open()
-                            self._show_message(f"Ты открыл {container.name}. Внутри: {', '.join(container.items) if container.items else 'пусто'}")
-                        else:
-                            self._show_message(f"{container.name} уже открыт")
-                        break
-            elif cmd_type == "interact_drop":
-                drop_id = command[1]
-                for drop in self.current_map.drops:
-                    if drop.id == drop_id and not drop.is_empty:
-                        # Пока просто показываем сообщение
-                        items_text = ', '.join(drop.items) if drop.items else "пусто"
-                        self._show_message(f"На земле: {items_text}")
-                        # TODO: позже добавим подбор в инвентарь
-                        break
+                self.dialog_system.choose_option(choice_index)
+            elif cmd_type == "interact":
+                _, target_x, target_y = command
+                self._handle_interaction(target_x, target_y)
             elif cmd_type == "move_to":
-                target_x, target_y = command[1]
-                # Пока просто шаг, если цель — соседняя клетка
+                _, target_x, target_y = command
                 dx = target_x - self.game_state.player["x"]
                 dy = target_y - self.game_state.player["y"]
                 if abs(dx) + abs(dy) == 1:
@@ -156,21 +120,8 @@ class GameEngine:
                     if self.current_map.is_walkable(new_x, new_y):
                         self.game_state.player["x"] = new_x
                         self.game_state.player["y"] = new_y
-            elif cmd_type == "interact_container":
-                container_id = command[1]
-                for container in self.current_map.containers:
-                    if container.id == container_id:
-                        if container.locked:
-                            self._show_message("Контейнер заперт")
-                        elif not container.is_open:
-                            container.open()
-                            items_text = ', '.join(container.items) if container.items else "пусто"
-                            self._show_message(f"Ты открыл {container.name}. Внутри: {items_text}")
-                        else:
-                            self._show_message(f"{container.name} уже открыт")
-                        break
-
         else:
+            # ← ЭТОГО БЛОКА НЕ ХВАТАЕТ
             if command == "interact":
                 self._interact()
             elif command == "menu":
@@ -179,49 +130,30 @@ class GameEngine:
                 else:
                     self.running = False
             elif command == "open_inventory":
-                # TODO: открыть инвентарь
                 pass
             elif command == "context_menu":
-                # TODO: контекстное меню
                 pass
 
+    
     def _interact(self):
-        '''
-        Взаимодействие с тем, что перед игроком (по клавише E).
-        
-        отвечает за взаимодействие игрока с объектом, находящимся непосредственно перед ним 
-        (на соседней клетке в направлении взгляда)
-        
-
-        Определяет клетку перед игроком
-        Берёт текущие координаты игрока (player["x"], player["y"])
-        Добавляет направление взгляда (facing_direction)
-        Получает координаты (nx, ny) — клетка, на которую смотрит игрок
-        Проверяет, есть ли там NPC
-        Если да → запускает диалог (dialog_system.load_dialog)
-        Выходит из метода (дальше не проверяет)
-        Если NPC нет — проверяет, есть ли контейнер
-        Если да → открывает его или показывает сообщение (заперт / уже открыт / содержимое)
-        Выходит
-        Если контейнера нет — проверяет, есть ли дроп (предметы на земле)
-        Если да → показывает сообщение с содержимым (_show_message)
-        Выходит
-        Если дропа нет — проверяет, есть ли дверь
-        Если дверь закрыта (типы 5-9) → открывает
-        Если дверь открыта (тип 2) → закрывает
-
-        '''
+        """Взаимодействие с тем, что перед игроком (по клавише E)."""
         nx = self.game_state.player["x"] + self.facing_direction[0]
         ny = self.game_state.player["y"] + self.facing_direction[1]
-        
+        self._handle_interaction(nx, ny)
+    
+    def _handle_interaction(self, x, y):
+        """
+        Единый метод взаимодействия с объектом в клетке (x, y).
+        Используется и для клавиши E, и для клика мышью.
+        """
         # 1. NPC
-        npc = self.current_map.get_npc_at(nx, ny)
+        npc = self.current_map.get_npc_at(x, y)
         if npc:
             self.dialog_system.load_dialog(npc["dialog_id"])
             return
-        
+
         # 2. Контейнер
-        container = self.current_map.get_container_at(nx, ny)
+        container = self.current_map.get_container_at(x, y)
         if container:
             if container.locked:
                 self._show_message("Контейнер заперт")
@@ -232,23 +164,23 @@ class GameEngine:
             else:
                 self._show_message(f"{container.name} уже открыт")
             return
-        
-        # 3. Дроп (предметы на земле)
-        drop = self.current_map.get_drop_at(nx, ny)
+
+        # 3. Дроп
+        drop = self.current_map.get_drop_at(x, y)
         if drop:
             items_text = ', '.join(drop.items) if drop.items else "пусто"
             self._show_message(f"На земле: {items_text}")
-            # TODO: позже добавим подбор в инвентарь
             return
 
         # 4. Дверь
-        tile_type = self.current_map.get_tile_type(nx, ny)
+        tile_type = self.current_map.get_tile_type(x, y)
         if tile_type in (5, 6, 7, 8, 9):
-            self.current_map.open_door(nx, ny)
-            self.current_map.reset_npcs_near_door(nx, ny)
+            self.current_map.open_door(x, y)
+            self.current_map.reset_npcs_near_door(x, y)
         elif tile_type == 2:
-            self.current_map.close_door(nx, ny)
-            self.current_map.reset_npcs_near_door(nx, ny)
+            self.current_map.close_door(x, y)
+            self.current_map.reset_npcs_near_door(x, y)
+
 
     # -------------------------------------------------------------------------
     # ОБНОВЛЕНИЕ (логика)
@@ -292,6 +224,9 @@ class GameEngine:
 
         # ----- Движение NPC -----
         self.current_map.update_npcs(current_time, self.game_state.player["x"], self.game_state.player["y"])
+
+        # ----- Движение кошки -----
+        self.current_map.update_cats(current_time)
 
     # -------------------------------------------------------------------------
     # ПЕРЕХОД МЕЖДУ ЛОКАЦИЯМИ
