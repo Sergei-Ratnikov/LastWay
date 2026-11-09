@@ -1,4 +1,6 @@
 # game_engine.py
+import random
+
 import pygame
 import sys
 from settings import *
@@ -7,6 +9,8 @@ from world.map import Map
 from systems.dialog_system import DialogSystem
 from world.location_manager import LocationManager
 from input_handler import InputHandler
+
+from logger import log
 
 class GameEngine:
     """Главный игровой движок. Управляет циклом, событиями, обновлением и отрисовкой."""
@@ -50,6 +54,8 @@ class GameEngine:
         # Временно, пока нет выбора класса
         if not self.game_state.player["class"]:
             self.game_state.player["class"] = "Идальго"
+
+        self.move_queue = []  # очередь клеток для автоматического движения игрока
 
         # Обработчик ввода
         self.input_handler = InputHandler()
@@ -99,8 +105,8 @@ class GameEngine:
                 self._process_command(command)
 
     def _process_command(self, command):
-        print(f"DEBUG game_engine.py: получена команда {command}")
-
+        # print(f"DEBUG game_engine.py: получена команда {command}")
+        log.info(f"Получена команда {command}")
         if isinstance(command, tuple):
             cmd_type = command[0]
 
@@ -110,18 +116,25 @@ class GameEngine:
             elif cmd_type == "interact":
                 _, target_x, target_y = command
                 self._handle_interaction(target_x, target_y)
+
             elif cmd_type == "move_to":
                 _, target_x, target_y = command
-                dx = target_x - self.game_state.player["x"]
-                dy = target_y - self.game_state.player["y"]
-                if abs(dx) + abs(dy) == 1:
-                    new_x = self.game_state.player["x"] + dx
-                    new_y = self.game_state.player["y"] + dy
-                    if self.current_map.is_walkable(new_x, new_y):
-                        self.game_state.player["x"] = new_x
-                        self.game_state.player["y"] = new_y
+                from world.pathfinding import find_path
+                # Проверяем, что цель проходима
+                if not self.current_map.is_walkable(target_x, target_y):
+                    return
+                # Строим путь от игрока до цели
+                path = find_path(
+                    self.game_state.player["x"],
+                    self.game_state.player["y"],
+                    target_x,
+                    target_y,
+                    self.current_map.is_walkable
+                )
+                if path:
+                    self.move_queue = path
+                        
         else:
-            # ← ЭТОГО БЛОКА НЕ ХВАТАЕТ
             if command == "interact":
                 self._interact()
             elif command == "menu":
@@ -134,7 +147,6 @@ class GameEngine:
             elif command == "context_menu":
                 pass
 
-    
     def _interact(self):
         """Взаимодействие с тем, что перед игроком (по клавише E)."""
         nx = self.game_state.player["x"] + self.facing_direction[0]
@@ -181,40 +193,43 @@ class GameEngine:
             self.current_map.close_door(x, y)
             self.current_map.reset_npcs_near_door(x, y)
 
-
     # -------------------------------------------------------------------------
     # ОБНОВЛЕНИЕ (логика)
     # -------------------------------------------------------------------------
+    
     def update(self, current_time: int):
-        """Обновляет движение игрока и NPC (только если не в диалоге)."""
+        """Обновляет движение игрока и NPC."""
         if self.game_state.dialog_active:
             return
 
-        # ----- Движение игрока -----
-        keys = pygame.key.get_pressed()
-        dx = dy = 0
+        # ----- 1. Автоматическое движение игрока по пути (BFS) -----
+        if self.move_queue:
+            self._move_entity_step(self.game_state.player, is_player=True)
+            
+        # ----- 2. Ручное движение игрока (WASD) -----
+        else:
+            keys = pygame.key.get_pressed()
+            dx = dy = 0
+            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                dx = -1
+                self.facing_direction = (-1, 0)
+            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                dx = 1
+                self.facing_direction = (1, 0)
+            if keys[pygame.K_UP] or keys[pygame.K_w]:
+                dy = -1
+                self.facing_direction = (0, -1)
+            if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+                dy = 1
+                self.facing_direction = (0, 1)
 
-        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-            dx = -1
-            self.facing_direction = (-1, 0)
-        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-            dx = 1
-            self.facing_direction = (1, 0)
-        if keys[pygame.K_UP] or keys[pygame.K_w]:
-            dy = -1
-            self.facing_direction = (0, -1)
-        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-            dy = 1
-            self.facing_direction = (0, 1)
-
-        if (dx != 0 or dy != 0) and current_time - self.last_move_time >= MOVE_DELAY_MS:
-            new_x = self.game_state.player["x"] + dx
-            new_y = self.game_state.player["y"] + dy
-
-            if self.current_map.is_walkable(new_x, new_y):
-                self.game_state.player["x"] = new_x
-                self.game_state.player["y"] = new_y
-                self.last_move_time = current_time
+            if (dx != 0 or dy != 0) and current_time - self.last_move_time >= MOVE_DELAY_MS:
+                new_x = self.game_state.player["x"] + dx
+                new_y = self.game_state.player["y"] + dy
+                if self.current_map.is_walkable(new_x, new_y):
+                    self.game_state.player["x"] = new_x
+                    self.game_state.player["y"] = new_y
+                    self.last_move_time = current_time
 
         # обработка точки перехода в другую локацию
         exit_point = self.current_map.get_exit_at(self.game_state.player["x"], self.game_state.player["y"])
@@ -222,10 +237,60 @@ class GameEngine:
             self.switch_location(exit_point["target_location"], exit_point["target_exit_id"])
             return
 
-        # ----- Движение NPC -----
-        self.current_map.update_npcs(current_time, self.game_state.player["x"], self.game_state.player["y"])
+        # ----- 3. Движение NPC -----
+        for npc in self.current_map.npcs:
+            if npc["movement"] == "stationary": 
+                continue
 
-        # ----- Движение кошки -----
+            # Если NPC ждет после застревания
+            if npc.get("wait_until", 0) > current_time:
+                continue
+
+            # Если NPC достиг текущей цели — переключаем индекс
+            if npc.get("patrol_points"):
+                target = npc["patrol_points"][npc.get("patrol_index", 0)]
+                
+                # Извлекаем координаты цели (они могут быть списком или словарём)
+                if isinstance(target, list):
+                    tx, ty = target[0], target[1]
+                else:
+                    tx, ty = target.get("pos", [npc["x"], npc["y"]])[0], target.get("pos", [npc["x"], npc["y"]])[1]
+                
+                # Если мы УЖЕ на цели — переключаем индекс
+                if (npc["x"], npc["y"]) == (tx, ty):
+                    npc["patrol_index"] = (npc.get("patrol_index", 0) + 1) % len(npc["patrol_points"])
+                    npc["last_move_time"] = current_time  # Сброс таймера, чтобы не бежал сразу
+                    # print(f"NPC {npc['name']} достиг цели, переход к индексу {npc['patrol_index']}")
+                    log.info(f"NPC {npc['name']} достиг цели, переход к индексу {npc['patrol_index']}")
+                    continue # Пропускаем этот кадр, на следующем построит путь к новой цели
+
+            # Если пути нет — строим заново
+            if not npc.get("path") and npc.get("patrol_points"):
+                # Если NPC ждет после застревания — не строим путь прямо сейчас
+                if npc.get("wait_until", 0) > current_time:
+                    continue
+                target = npc["patrol_points"][npc.get("patrol_index", 0)]
+                if isinstance(target, list):
+                    tx, ty = target[0], target[1]
+                else:
+                    tx, ty = target.get("pos", [npc["x"], npc["y"]])[0], target.get("pos", [npc["x"], npc["y"]])[1]
+                    
+                from world.pathfinding import find_path
+                # BFS ищет путь, игнорируя NPC и двери (is_walkable_static)
+                path = find_path(npc["x"], npc["y"], tx, ty, self.current_map.is_walkable_static)
+                # print(f"DEBUG PATH: NPC {npc['name']} на ({npc['x']},{npc['y']}). Цель: ({tx},{ty}). Путь: {path}")
+                log.info(f"PATH: NPC {npc['name']} на ({npc['x']},{npc['y']}). Цель: ({tx},{ty}). Путь: {path}")
+                if path:
+                    npc["path"] = path
+                else:
+                    npc["last_move_time"] = current_time
+
+            # Делаем шаг
+            self._move_entity_step(npc, is_player=False)
+
+
+
+        # ----- 4. Обновление кошек -----
         self.current_map.update_cats(current_time)
 
     # -------------------------------------------------------------------------
@@ -245,7 +310,7 @@ class GameEngine:
         
         # Сбрасываем таймер движения
         self.last_move_time = pygame.time.get_ticks()
-
+        self.move_queue = []
     # -------------------------------------------------------------------------
     # ОТРИСОВКА
     # -------------------------------------------------------------------------
@@ -302,7 +367,7 @@ class GameEngine:
 
             if not self.game_state.dialog_options:
                 close_hint = font.render("Нажми E или ESC, чтобы продолжить", True, (150, 150, 150))
-                self.screen.blit(close_hint, (55, HEIGHT - 60))
+                self.screen.blit(close_hint, (55, HEIGHT - 85))
 
         # Временное сообщение (например, от контейнера)
         if self.temp_message:
@@ -325,3 +390,112 @@ class GameEngine:
         """Показывает временное сообщение (например, при открытии контейнера)."""
         self.temp_message = text
         self.temp_message_timer = pygame.time.get_ticks()
+
+    def _move_entity_step(self, entity, is_player=False):
+        """Универсальный шаг для игрока или NPC с обходом препятствий."""
+        current_time = pygame.time.get_ticks()
+
+        # Задержка движения
+        delay = MOVE_DELAY_MS if is_player else entity.get("move_delay_ms", 1000)
+        last_move = self.last_move_time if is_player else entity.get("last_move_time", 0)
+        if current_time - last_move < delay:
+            return
+
+        # Пауза (если NPC застрял)
+        if not is_player and entity.get("wait_until", 0) > current_time:
+            return
+
+        path = self.move_queue if is_player else entity.get("path", [])
+        if not path:
+            return
+
+        next_x, next_y = path[0]
+        curr_x = self.game_state.player["x"] if is_player else entity["x"]
+        curr_y = self.game_state.player["y"] if is_player else entity["y"]
+
+        # 1. Проверка на закрытую дверь
+        tile_ahead = self.current_map.get_tile_type(next_x, next_y)
+        if tile_ahead in (5, 6, 7, 8, 9):  # Только ЗАКРЫТЫЕ двери
+            if self.current_map.open_door(next_x, next_y):
+                self.current_map.reset_npcs_near_door(next_x, next_y)
+                if not is_player:
+                    entity["last_door_pos"] = (next_x, next_y)
+                if is_player: self.last_move_time = current_time
+                else: entity["last_move_time"] = current_time
+                return
+
+        # 2. Проверка на препятствия (игрок или другой NPC)
+        def check_walkable(tx, ty):
+            if is_player:
+                return self.current_map.is_walkable(tx, ty)
+            else:
+                return self.current_map.is_walkable_for_npc(tx, ty, entity)
+
+        blocked = not check_walkable(next_x, next_y)
+
+        if blocked:
+            log.info(f"БЛОК: {entity.get('name', 'Игрок')} на ({curr_x},{curr_y}) уперся. Цель: ({next_x},{next_y})")
+            
+            # Вычисляем векторы направления
+            dx = next_x - curr_x
+            dy = next_y - curr_y
+            
+            # Варианты обхода: Вправо, Влево, Назад
+            right_x, right_y = curr_x - dy, curr_y + dx
+            left_x, left_y = curr_x + dy, curr_y - dx
+            back_x, back_y = curr_x - dx, curr_y - dy
+
+            # Пробуем шагнуть в сторону
+            if check_walkable(right_x, right_y):
+                next_x, next_y = right_x, right_y
+                log.info(f"ОБХОД: {entity.get('name', 'Игрок')} шагает ВПРАВО в ({next_x},{next_y})")
+            elif check_walkable(left_x, left_y):
+                next_x, next_y = left_x, left_y
+                log.info(f"ОБХОД: {entity.get('name', 'Игрок')} шагает ВЛЕВО в ({next_x},{next_y})")
+            elif check_walkable(back_x, back_y):
+                next_x, next_y = back_x, back_y
+                log.info(f"ОБХОД: {entity.get('name', 'Игрок')} шагает НАЗАД в ({next_x},{next_y})")
+            else:
+                log.info(f"ТУПИК: {entity.get('name', 'Игрок')} не может обойти.")
+                if is_player:
+                    self.move_queue = []
+                else:
+                    entity["path"] = []
+                    entity["wait_until"] = current_time + 500
+                return
+                
+            # ВАЖНО: Если мы шагнули в сторону, мы ДОЛЖНЫ сбросить путь.
+            # На следующем кадре BFS проложит маршрут от новой позиции.
+            if is_player:
+                self.move_queue = []
+            else:
+                entity["path"] = []
+                entity["last_move_time"] = current_time
+
+        # 3. Движение
+        if check_walkable(next_x, next_y):
+            if is_player:
+                self.game_state.player["x"] = next_x
+                self.game_state.player["y"] = next_y
+                # Проверяем, не пустой ли move_queue перед удалением
+                if self.move_queue:
+                    self.move_queue.pop(0)
+                self.last_move_time = current_time
+            else:
+                log.info(f"ШАГ: NPC {entity['name']} идет из ({entity['x']},{entity['y']}) в ({next_x},{next_y})")
+                entity["x"] = next_x
+                entity["y"] = next_y
+                
+                # Если шаг был в сторону (обход), НЕ удаляем клетку из пути!
+                if path and (next_x, next_y) == path[0]:
+                    path.pop(0)
+                
+                entity["last_move_time"] = current_time
+
+                # Закрытие двери
+                if entity.get("last_door_pos"):
+                    ldx, ldy = entity["last_door_pos"]
+                    if abs(entity["x"] - ldx) + abs(entity["y"] - ldy) >= 1:
+                        self.current_map.close_door(ldx, ldy)
+                        self.current_map.reset_npcs_near_door(ldx, ldy)
+                        entity["last_door_pos"] = None

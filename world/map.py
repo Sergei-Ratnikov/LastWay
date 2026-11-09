@@ -6,6 +6,7 @@ import random
 from settings import *
 from world.location_manager import LocationManager
 from world.tile_data import TileData
+from logger import log
 
 class Map:
 
@@ -70,12 +71,6 @@ class Map:
             )
             self.cats.append(cat)
 
-
-        # print(f"Загружено контейнеров: {len(self.containers)}")
-        # for c in self.containers:
-        #     print(f"  {c.id} at ({c.x}, {c.y})")
-
-
         # Загрузка данных NPC из отдельных файлов
         npcs_loaded = []
         for npc_ref in self.npcs:
@@ -89,7 +84,7 @@ class Map:
                 with open(npc_path, "r", encoding="utf-8") as f:
                     npc_data = json.load(f)
             except Exception as e:
-                print(f"Ошибка загрузки NPC {npc_id}: {e}")
+                log.warning(f"Ошибка загрузки NPC {npc_id}: {e}")
                 continue
 
             # Объединяем данные из location.json (координаты) и из файла NPC (параметры)
@@ -126,23 +121,24 @@ class Map:
         tile = self.tiles[y][x]
         return self.tile_data.is_walkable(tile)
 
-    def is_walkable_for_npc(self, x, y, current_npc):
+    def is_walkable_for_npc(self, x, y, current_npc, ignore_doors=False):
         """
         Проверяет, может ли NPC войти в клетку (x, y).
-        Условия:
-        - координаты в пределах карты
-        - тайл проходим (по данным из tiles.json)
-        - в клетке нет игрока
-        - в клетке нет другого NPC (кроме себя)
-        - в клетке нет контейнера
+        Если ignore_doors=True — двери считаются проходимыми (для BFS).
         """
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
             return False
 
-        # Проверка тайла через tile_data
         tile = self.tiles[y][x]
-        if not self.tile_data.is_walkable(tile):
-            return False
+        if ignore_doors:
+            # Двери считаем проходимыми, стены — нет
+            prop = self.tile_data.get(tile)
+            is_door = prop.get("is_door", False) if prop else False
+            if not is_door and not self.tile_data.is_walkable(tile):
+                return False
+        else:
+            if not self.tile_data.is_walkable(tile):
+                return False
 
         # Нельзя проходить сквозь игрока
         if self.game_state.player["x"] == x and self.game_state.player["y"] == y:
@@ -159,6 +155,35 @@ class Map:
 
         return True
 
+
+    def is_walkable_static(self, x, y):
+        """
+        Проверка для BFS: стены и контейнеры. 
+        Двери и NPC игнорируются (двери можно открыть, NPC обойти).
+        """
+        if x < 0 or x >= self.width or y < 0 or y >= self.height:
+            return False
+            
+        tile = self.tiles[y][x]
+        prop = self.tile_data.get(tile)
+        if not prop:
+            return False
+            
+        # Двери считаем проходимыми для прокладки маршрута
+        if prop.get("is_door", False):
+            return True
+            
+        # Стены и прочее (если не walkable) блокируют
+        if not prop.get("walkable", False):
+            return False
+            
+        # Контейнеры (сундуки) блокируют
+        if self.get_container_at(x, y) is not None:
+            return False
+            
+        return True
+
+
     def is_walkable_for_cat(self, x, y):
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
             return False
@@ -174,31 +199,64 @@ class Map:
         return True
 
     def is_door(self, x, y):
+        """Универсальная проверка: является ли клетка дверью (открытой или закрытой)."""
         tile = self.get_tile_type(x, y)
         if tile is None:
             return False
         prop = self.tile_data.get(tile)
         return prop.get("is_door", False) if prop else False
 
+    def _get_adjacent_door(self, x, y):
+        """Ищет соседнюю дверь (по горизонтали или вертикали), чтобы сделать дверь шириной в 2 клетки."""
+        # Проверяем 4 направления
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            nx, ny = x + dx, y + dy
+            if self.is_door(nx, ny):
+                return (nx, ny)
+        return None
+
     def open_door(self, x, y):
         if x == self.game_state.player["x"] and y == self.game_state.player["y"]:
-            print("Нельзя открыть дверь там, где стоит игрок")
+            log.warning("Нельзя открыть дверь там, где стоит игрок")
             return False
-        print(f"open_door({x}, {y}) -> tile = {self.get_tile_type(x, y)}")
-        if self.get_tile_type(x, y) in (5, 6, 7, 8, 9):
-            self.tiles[y][x] = 2
-            self.game_state.set_door_state(x, y, 2)
-            print(f"Дверь {x},{y} успешно открыта")
-            return True
-        print(f"Не удалось открыть: не дверь")
-        return False
+            
+        if not self.is_door(x, y):
+            log.warning(f"Не удалось открыть: ({x},{y}) не дверь")
+            return False
+
+        # Открываем первую половину
+        self.tiles[y][x] = 2
+        self.game_state.set_door_state(x, y, 2)
+        log.info(f"Дверь {x},{y} успешно открыта")
+        
+        # Ищем и открываем вторую половину
+        adjacent = self._get_adjacent_door(x, y)
+        if adjacent:
+            ax, ay = adjacent
+            self.tiles[ay][ax] = 2
+            self.game_state.set_door_state(ax, ay, 2)
+            log.info(f"Соседняя дверь {ax},{ay} тоже открыта (дверь 2x1)")
+            
+        return True
 
     def close_door(self, x, y):
-        if self.get_tile_type(x, y) == 2:
-            self.tiles[y][x] = 5
-            self.game_state.set_door_state(x, y, 5)
-            return True
-        return False
+        if not self.is_door(x, y):
+            return False
+
+        # Закрываем первую половину
+        self.tiles[y][x] = 5
+        self.game_state.set_door_state(x, y, 5)
+        log.info(f"Дверь {x},{y} закрыта")
+        
+        # Ищем и закрываем вторую половину
+        adjacent = self._get_adjacent_door(x, y)
+        if adjacent:
+            ax, ay = adjacent
+            self.tiles[ay][ax] = 5
+            self.game_state.set_door_state(ax, ay, 5)
+            log.info(f"Соседняя дверь {ax},{ay} тоже закрыта")
+            
+        return True
 
     def get_tile_type(self, x, y):
         if 0 <= x < self.width and 0 <= y < self.height:
@@ -356,122 +414,11 @@ class Map:
         for npc in self.npcs:
             npc["last_move_time"] = 0
 
-    def update_npcs(self, current_time, player_x, player_y):
-        for npc in self.npcs:
-            if npc["movement"] == "stationary":
-                continue
-
-            # Задержка движения
-            if current_time - npc.get("last_move_time", 0) < npc.get("move_delay_ms", 1000):
-                continue
-
-            # Задержка ожидания (wait)
-            if npc.get("wait_until", 0) > current_time:
-                continue
-
-            # --- ОТКРЫТЬ ДВЕРЬ ПОД СОБОЙ ---
-            tile_below = self.get_tile_type(npc["x"], npc["y"])
-            if tile_below in (5, 6, 7, 8, 9):
-                self.open_door(npc["x"], npc["y"])
-                self.reset_npcs_near_door(npc["x"], npc["y"])
-                print(f"NPC {npc['name']} открыл дверь под собой {npc['x']},{npc['y']}")
-                npc["last_move_time"] = current_time
-                continue
-
-            # Получаем текущую цель
-            patrol_points = npc.get("patrol_points", [])
-            if not patrol_points:
-                continue
-
-            current_index = npc.get("patrol_index", 0)
-            target = patrol_points[current_index]
-
-            # Определяем координаты цели
-            if isinstance(target, list):
-                target_x, target_y = target[0], target[1]
-                action = None
-            else:
-                target_x = target.get("pos", [npc["x"], npc["y"]])[0]
-                target_y = target.get("pos", [npc["x"], npc["y"]])[1]
-                action = target.get("action")
-
-            # Вычисляем направление к цели
-            dx = 0
-            dy = 0
-            if npc["x"] < target_x:
-                dx = 1
-            elif npc["x"] > target_x:
-                dx = -1
-            elif npc["y"] < target_y:
-                dy = 1
-            elif npc["y"] > target_y:
-                dy = -1
-
-            new_x = npc["x"] + dx
-            new_y = npc["y"] + dy
-
-            # --- ОТКРЫТЬ ДВЕРЬ ПЕРЕД СОБОЙ (по направлению) ---
-            door_ahead_x = npc["x"] + dx
-            door_ahead_y = npc["y"] + dy
-            tile_ahead = self.get_tile_type(door_ahead_x, door_ahead_y)
-            if tile_ahead in (5, 6, 7, 8, 9):
-                self.open_door(door_ahead_x, door_ahead_y)
-                self.reset_npcs_near_door(door_ahead_x, door_ahead_y)
-                print(f"NPC {npc['name']} открыл дверь впереди {door_ahead_x},{door_ahead_y}")
-                npc["last_move_time"] = current_time
-                continue
-
-            # Проверка: если уже стоим на цели ИЛИ сделали шаг и попали
-            already_on_target = (dx == 0 and dy == 0)
-            reached = (new_x == target_x and new_y == target_y)
-
-            if already_on_target or reached:
-                # Выполняем действие, если есть
-                if action:
-                    if action == "open_door":
-                        door_dir = target.get("direction", (0, 0))
-                        door_x = npc["x"] + door_dir[0]
-                        door_y = npc["y"] + door_dir[1]
-                        self.open_door(door_x, door_y)
-                        self.reset_npcs_near_door(door_x, door_y)
-                        print(f"NPC {npc['name']} выполнил open_door {door_x},{door_y}")
-                    elif action == "close_door":
-                        door_dir = target.get("direction", (0, 0))
-                        door_x = npc["x"] + door_dir[0]
-                        door_y = npc["y"] + door_dir[1]
-                        self.close_door(door_x, door_y)
-                        self.reset_npcs_near_door(door_x, door_y)
-                        print(f"NPC {npc['name']} выполнил close_door {door_x},{door_y}")
-                    elif action == "face":
-                        npc["facing"] = target.get("direction", (0, 0))
-                    elif action == "wait":
-                        duration = target.get("duration", 500)
-                        npc["wait_until"] = current_time + duration
-                        npc["last_move_time"] = current_time
-                        continue
-
-                # Переход к следующей точке
-                next_index = (current_index + 1) % len(patrol_points)
-                npc["patrol_index"] = next_index
-                npc["last_move_time"] = current_time
-                continue
-
-            # Движение к цели (проверка коллизий)
-            if self.is_walkable_for_npc(new_x, new_y, npc):
-                npc["x"] = new_x
-                npc["y"] = new_y
-                npc["last_move_time"] = current_time
-                npc["stuck_counter"] = 0
-            else:
-                npc["stuck_counter"] = npc.get("stuck_counter", 0) + 1
-                if npc["stuck_counter"] > 3 and npc["movement"] == "random":
-                    npc["last_move_time"] = current_time - npc.get("move_delay_ms", 1000) + 50
-
     def update_cats(self, current_time):
         for cat in self.cats:
             cat.update_needs(current_time)
             cat.decide_action(self)
-            cat.move_towards_target(self, current_time)  # ← передаём время
+            cat.move_towards_target(self, current_time)
 
     def get_exit_at(self, x, y):
         '''

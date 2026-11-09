@@ -1,5 +1,6 @@
 # entities/cat.py
 import random
+from world.pathfinding import find_path
 
 
 class Cat:
@@ -32,6 +33,8 @@ class Cat:
         self.last_move_time = 0
         self.move_delay_ms = 300
 
+        self.path = []  # очередь клеток для прохождения
+
     # -------------------------------------------------------------------------
     # ПОТРЕБНОСТИ
     # -------------------------------------------------------------------------
@@ -49,41 +52,51 @@ class Cat:
     # -------------------------------------------------------------------------
     # ВЫБОР ДЕЙСТВИЯ
     # -------------------------------------------------------------------------
+
     def decide_action(self, current_map):
         """Выбирает действие по приоритету потребностей."""
-
-        print(f"DEBUG кошка: голод={self.hunger} энергия={self.energy} скука={self.boredom} действие={self.action} цель={self.target}")
-
         # Если уже что-то делаем — не меняем
         if self.action in ("eat", "sleep", "play", "meow") and self.action_timer > 0:
             self.action_timer -= 1
+            return
+
+        # Если уже есть путь — не пересчитываем
+        if self.path:
             return
 
         # Приоритет 0: стремление выйти
         if self.wanderlust > 60:
             door = self._find_nearest_door(current_map)
             if door:
-                self.action = "move"
-                self.target = door
-                return
+                path = find_path(self.x, self.y, door[0], door[1], current_map.is_walkable_for_cat)
+                if path:
+                    self.path = path
+                    self.target = door
+                    return
 
         # Приоритет 1: голод
         if self.hunger < 30 and self.food_pos:
-            self.action = "move"
-            self.target = tuple(self.food_pos)
-            return
+            path = find_path(self.x, self.y, self.food_pos[0], self.food_pos[1], current_map.is_walkable_for_cat)
+            if path is not None:
+                self.path = path
+                self.target = tuple(self.food_pos)
+                return
 
         # Приоритет 2: сон
         if self.energy < 30 and self.bed_pos:
-            self.action = "move"
-            self.target = tuple(self.bed_pos)
-            return
+            path = find_path(self.x, self.y, self.bed_pos[0], self.bed_pos[1], current_map.is_walkable_for_cat)
+            if path is not None:
+                self.path = path
+                self.target = tuple(self.bed_pos)
+                return
 
         # Приоритет 3: скука
         if self.boredom > 70 and self.toy_pos:
-            self.action = "move"
-            self.target = tuple(self.toy_pos)
-            return
+            path = find_path(self.x, self.y, self.toy_pos[0], self.toy_pos[1], current_map.is_walkable_for_cat)
+            if path is not None:
+                self.path = path
+                self.target = tuple(self.toy_pos)
+                return
 
         # Иначе — случайное блуждание
         if self.action == "idle":
@@ -113,71 +126,63 @@ class Cat:
     # ДВИЖЕНИЕ К ЦЕЛИ
     # -------------------------------------------------------------------------
     def move_towards_target(self, current_map, current_time):
-        """Делает шаг к цели, если возможно."""
-
-        
-        if not self.target:
+        """Делает шаг по пути к цели."""
+        # Задержка движения
+        if current_time - self.last_move_time < self.move_delay_ms:
             return
 
-        # Задержка движфения
-        if current_time - self.last_move_time < self.move_delay_ms:
+        # Если есть путь — идём по нему
+        if self.path:
+            next_x, next_y = self.path[0]
+            self.x = next_x
+            self.y = next_y
+            self.path.pop(0)
+            self.last_move_time = current_time
+
+            # Если путь закончился — выполняем действие
+            if not self.path:
+                self._on_reached_target(current_map, current_time)
+            return
+
+        # Если пути нет — сбрасываем
+        self.action = "idle"
+        self.target = None
+
+    def _on_reached_target(self, current_map, current_time):
+        """Вызывается, когда кошка дошла до цели."""
+        if not self.target:
+            self.action = "idle"
             return
 
         tx, ty = self.target
 
-        # Если достигли цели
-        if (self.x, self.y) == (tx, ty):
-            # Если это дверь — мяукаем
-            if current_map.is_door(tx, ty):
-                self.action = "meow"
-                self.action_timer = 5
-                self.wanderlust = max(0, self.wanderlust - 30)
-                print(f"Кошка {self.id}: Мяу! (у двери {tx},{ty})")
-                self.target = None
-                self.last_move_time = current_time
-                return
-
-            # Действия по потребностям
-            if self.hunger < 30:
-                self.action = "eat"
-                self.action_timer = 3
-                self.hunger = min(100, self.hunger + 40)
-            elif self.energy < 30:
-                self.action = "sleep"
-                self.action_timer = 5
-                self.energy = min(100, self.energy + 60)
-            elif self.boredom > 70:
-                self.action = "play"
-                self.action_timer = 3
-                self.boredom = max(0, self.boredom - 50)
-            else:
-                self.action = "idle"
+        # Если это дверь — мяукаем
+        if current_map.is_door(tx, ty):
+            self.action = "meow"
+            self.action_timer = 5
+            self.wanderlust = max(0, self.wanderlust - 30)
+            print(f"Кошка {self.id}: Мяу! (у двери {tx},{ty})")
             self.target = None
             self.last_move_time = current_time
             return
 
-        # Двигаемся по одной оси
-        dx = 0
-        dy = 0
-        if self.x < tx:
-            dx = 1
-        elif self.x > tx:
-            dx = -1
-        elif self.y < ty:
-            dy = 1
-        elif self.y > ty:
-            dy = -1
-
-        new_x = self.x + dx
-        new_y = self.y + dy
-
-        print(f"DEBUG move: кошка ({self.x},{self.y}) цель ({tx},{ty}) шаг в ({new_x},{new_y}) проходимо={current_map.is_walkable_for_cat(new_x, new_y)}")
-
-        if current_map.is_walkable_for_cat(new_x, new_y):
-            self.x = new_x
-            self.y = new_y
-            self.last_move_time = current_time
+        # Действия по потребностям
+        if self.hunger < 30:
+            self.action = "eat"
+            self.action_timer = 3
+            self.hunger = min(100, self.hunger + 40)
+            print(f"Кошка {self.id} ест. Сытость: {self.hunger}")
+        elif self.energy < 30:
+            self.action = "sleep"
+            self.action_timer = 5
+            self.energy = min(100, self.energy + 60)
+            print(f"Кошка {self.id} спит. Энергия: {self.energy}")
+        elif self.boredom > 70:
+            self.action = "play"
+            self.action_timer = 3
+            self.boredom = max(0, self.boredom - 50)
+            print(f"Кошка {self.id} играет. Скука: {self.boredom}")
         else:
-            # Заблокировано — сбрасываем цель
-            self.target = None
             self.action = "idle"
+        self.target = None
+        self.last_move_time = current_time
