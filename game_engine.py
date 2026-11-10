@@ -56,7 +56,8 @@ class GameEngine:
             self.game_state.player["class"] = "Идальго"
 
         self.move_queue = []  # очередь клеток для автоматического движения игрока
-
+        self.player_target = None  # <--- Куда игрок хочет прийти (конечная точка клика)
+        
         # Обработчик ввода
         self.input_handler = InputHandler()
 
@@ -105,7 +106,6 @@ class GameEngine:
                 self._process_command(command)
 
     def _process_command(self, command):
-        # print(f"DEBUG game_engine.py: получена команда {command}")
         log.info(f"Получена команда {command}")
         if isinstance(command, tuple):
             cmd_type = command[0]
@@ -120,10 +120,11 @@ class GameEngine:
             elif cmd_type == "move_to":
                 _, target_x, target_y = command
                 from world.pathfinding import find_path
-                # Проверяем, что цель проходима
                 if not self.current_map.is_walkable(target_x, target_y):
                     return
-                # Строим путь от игрока до цели
+                
+                self.player_target = (target_x, target_y)  # <--- ЗАПОМИНАЕМ ЦЕЛЬ
+                
                 path = find_path(
                     self.game_state.player["x"],
                     self.game_state.player["y"],
@@ -314,7 +315,6 @@ class GameEngine:
                 if (npc["x"], npc["y"]) == (tx, ty):
                     npc["patrol_index"] = (npc.get("patrol_index", 0) + 1) % len(npc["patrol_points"])
                     npc["last_move_time"] = current_time  # Сброс таймера, чтобы не бежал сразу
-                    # print(f"NPC {npc['name']} достиг цели, переход к индексу {npc['patrol_index']}")
                     log.info(f"NPC {npc['name']} достиг цели, переход к индексу {npc['patrol_index']}")
                     continue # Пропускаем этот кадр, на следующем построит путь к новой цели
 
@@ -332,7 +332,6 @@ class GameEngine:
                 from world.pathfinding import find_path
                 # BFS ищет путь, игнорируя NPC и двери (is_walkable_static)
                 path = find_path(npc["x"], npc["y"], tx, ty, self.current_map.is_walkable_static)
-                # print(f"DEBUG PATH: NPC {npc['name']} на ({npc['x']},{npc['y']}). Цель: ({tx},{ty}). Путь: {path}")
                 log.info(f"PATH: NPC {npc['name']} на ({npc['x']},{npc['y']}). Цель: ({tx},{ty}). Путь: {path}")
                 if path:
                     npc["path"] = path
@@ -513,25 +512,31 @@ class GameEngine:
                 log.info(f"ТУПИК: {entity.get('name', 'Игрок')} не может обойти.")
                 if is_player:
                     self.move_queue = []
+                    self.player_target = None
                 else:
                     entity["path"] = []
                     entity["wait_until"] = current_time + 500
                 return
                 
-            # ВАЖНО: Если мы шагнули в сторону, мы ДОЛЖНЫ сбросить путь.
-            # На следующем кадре BFS проложит маршрут от новой позиции.
+            # Если шагнули в сторону, сбрасываем путь и строим новый (для игрока)
             if is_player:
                 self.move_queue = []
+                if self.player_target:
+                    from world.pathfinding import find_path
+                    path = find_path(next_x, next_y, self.player_target[0], self.player_target[1], self.current_map.is_walkable)
+                    if path:
+                        self.move_queue = path
+                    else:
+                        self.player_target = None
             else:
                 entity["path"] = []
                 entity["last_move_time"] = current_time
-
+       
         # 3. Движение
         if check_walkable(next_x, next_y):
             if is_player:
                 self.game_state.player["x"] = next_x
                 self.game_state.player["y"] = next_y
-                # Проверяем, не пустой ли move_queue перед удалением
                 if self.move_queue:
                     self.move_queue.pop(0)
                 self.last_move_time = current_time
