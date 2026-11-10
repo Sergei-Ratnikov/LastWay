@@ -1,7 +1,7 @@
 {
   "name": "Карлос",
-  "movement": "patrol",
+  "movement": "follow", 
   "move_delay_ms": 800,
-  "patrol_points": [[10,8], [8,8], [8,10], [10,10]],
+  "follow_target": "001_002", 
   "dialog_id": "001_003"
 }

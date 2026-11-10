@@ -99,7 +99,8 @@ class Map:
                 "patrol_points": npc_data.get("patrol_points", []),
                 "patrol_index": 0,
                 "last_move_time": 0,
-                "stuck_counter": 0
+                "stuck_counter": 0,
+                "follow_target": npc_data.get("follow_target", None)
             })
 
         self.npcs = npcs_loaded

@@ -133,7 +133,12 @@ class GameEngine:
                 )
                 if path:
                     self.move_queue = path
-                        
+
+            elif cmd_type == "interact":
+                _, target_x, target_y = command
+                self._handle_interaction(target_x, target_y) # Проверка будет внутри
+
+
         else:
             if command == "interact":
                 self._interact()
@@ -148,9 +153,11 @@ class GameEngine:
                 pass
 
     def _interact(self):
-        """Взаимодействие с тем, что перед игроком (по клавише E)."""
         nx = self.game_state.player["x"] + self.facing_direction[0]
         ny = self.game_state.player["y"] + self.facing_direction[1]
+        if not self._is_in_range(nx, ny):
+            self._show_message("Слишком далеко")
+            return
         self._handle_interaction(nx, ny)
     
     def _handle_interaction(self, x, y):
@@ -158,6 +165,13 @@ class GameEngine:
         Единый метод взаимодействия с объектом в клетке (x, y).
         Используется и для клавиши E, и для клика мышью.
         """
+
+        # Проверка дистанции
+        if not self._is_in_range(x, y):
+            self._show_message("Слишком далеко")
+            return
+        
+
         # 1. NPC
         npc = self.current_map.get_npc_at(x, y)
         if npc:
@@ -193,10 +207,18 @@ class GameEngine:
             self.current_map.close_door(x, y)
             self.current_map.reset_npcs_near_door(x, y)
 
+    def _is_in_range(self, target_x, target_y, radius=None):
+        """Проверяет, находится ли цель в радиусе взаимодействия от игрока."""
+        if radius is None:
+            radius = INTERACT_RADIUS
+        px = self.game_state.player["x"]
+        py = self.game_state.player["y"]
+        distance = abs(px - target_x) + abs(py - target_y)
+        return distance <= radius
+
     # -------------------------------------------------------------------------
     # ОБНОВЛЕНИЕ (логика)
     # -------------------------------------------------------------------------
-    
     def update(self, current_time: int):
         """Обновляет движение игрока и NPC."""
         if self.game_state.dialog_active:
@@ -246,6 +268,38 @@ class GameEngine:
             if npc.get("wait_until", 0) > current_time:
                 continue
 
+
+            # --- ЛОГИКА СЛЕДОВАНИЯ ---
+            if npc["movement"] == "follow" and npc.get("follow_target"):
+                # Ищем цель, за которой следуем
+                target_npc = None
+                for other in self.current_map.npcs:
+                    if other["id"] == npc["follow_target"]:
+                        target_npc = other
+                        break
+                
+                if target_npc:
+                    # Если мы уже рядом с целью (на соседней клетке), не дергаемся
+                    if abs(npc["x"] - target_npc["x"]) + abs(npc["y"] - target_npc["y"]) <= 1:
+                        npc["path"] = []
+                        npc["last_move_time"] = current_time
+                        continue
+                    
+                    # Если пути нет или цель сдвинулась, строим новый путь
+                    if not npc.get("path"):
+                        from world.pathfinding import find_path
+                        path = find_path(npc["x"], npc["y"], target_npc["x"], target_npc["y"], self.current_map.is_walkable_static)
+                        if path:
+                            npc["path"] = path
+                        else:
+                            npc["last_move_time"] = current_time
+                    
+                    self._move_entity_step(npc, is_player=False)
+                    continue  # Пропускаем логику патрулирования
+
+
+
+            # ЛОГИКА ПАТРУЛИРОВАНИЯ
             # Если NPC достиг текущей цели — переключаем индекс
             if npc.get("patrol_points"):
                 target = npc["patrol_points"][npc.get("patrol_index", 0)]

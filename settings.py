@@ -41,3 +41,6 @@ DATA_DIR = os.path.join(BASE_DIR, "data")               # Папка data
 MAPS_DIR = os.path.join(DATA_DIR, "maps")               # Карты
 NPCS_DIR = os.path.join(DATA_DIR, "npcs")               # Данные NPC
 DIALOGS_DIR = os.path.join(DATA_DIR, "dialogs")         # Диалоги
+
+# Максимальная дистанция взаимодействия (в клетках)
+INTERACT_RADIUS = 1
