@@ -4,7 +4,7 @@ from collections import deque
 
 def find_path(start_x, start_y, target_x, target_y, walkable_func):
     """
-    BFS-поиск пути от старта до цели.
+    BFS-поиск пути от старта до цели с поддержкой диагоналей.
     
     Аргументы:
         start_x, start_y — начальная клетка
@@ -21,7 +21,12 @@ def find_path(start_x, start_y, target_x, target_y, walkable_func):
     queue = deque()
     queue.append((start_x, start_y))
     visited = {(start_x, start_y): None}
-    directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+    
+    # 8 направлений: 4 ортогональных + 4 диагональных
+    directions = [
+        (1, 0), (-1, 0), (0, 1), (0, -1),
+        (1, 1), (1, -1), (-1, 1), (-1, -1)
+    ]
 
     while queue:
         x, y = queue.popleft()
@@ -37,8 +42,18 @@ def find_path(start_x, start_y, target_x, target_y, walkable_func):
 
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
-            if (nx, ny) not in visited and walkable_func(nx, ny):
-                visited[(nx, ny)] = (x, y)
-                queue.append((nx, ny))
+            if (nx, ny) in visited:
+                continue
+            if not walkable_func(nx, ny):
+                continue
+            
+            # Проверка "срезания углов" (только для диагоналей)
+            if dx != 0 and dy != 0:
+                # Нельзя идти по диагонали, если обе смежные клетки непроходимы
+                if not walkable_func(x + dx, y) or not walkable_func(x, y + dy):
+                    continue
+            
+            visited[(nx, ny)] = (x, y)
+            queue.append((nx, ny))
 
     return None

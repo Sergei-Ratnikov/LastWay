@@ -57,7 +57,8 @@ class GameEngine:
 
         self.move_queue = []  # очередь клеток для автоматического движения игрока
         self.player_target = None  # <--- Куда игрок хочет прийти (конечная точка клика)
-        
+        self.stuck_counter = 0  # <--- Счётчик застреваний игрока
+
         # Обработчик ввода
         self.input_handler = InputHandler()
 
@@ -68,6 +69,7 @@ class GameEngine:
         # Флаг работы цикла
         self.running = True
         self.exit_code = None  # "next_location", "exit"
+
 
     # -------------------------------------------------------------------------
     # ОСНОВНОЙ ЦИКЛ
@@ -486,9 +488,40 @@ class GameEngine:
 
         blocked = not check_walkable(next_x, next_y)
 
+        # Проверка на встречное движение (только для NPC)
+        if not is_player and blocked:
+            other_npc = self.current_map.get_npc_at(next_x, next_y)
+            if other_npc and other_npc.get("path") and other_npc["path"][0] == (curr_x, curr_y):
+                # Уступает только тот, у кого ID больше (чтобы не было взаимной вежливости)
+                if entity["id"] > other_npc["id"]:
+                    log.info(f"ВСТРЕЧА: {entity['name']} уступает дорогу {other_npc['name']}")
+                    entity["wait_until"] = current_time + 500
+                    return
+
+        # обход препятствий
         if blocked:
             log.info(f"БЛОК: {entity.get('name', 'Игрок')} на ({curr_x},{curr_y}) уперся. Цель: ({next_x},{next_y})")
             
+            # Увеличиваем счётчик застреваний
+            if is_player:
+                self.stuck_counter += 1
+            else:
+                entity["stuck_counter"] = entity.get("stuck_counter", 0) + 1
+            
+            # Если застряли слишком долго — сдаемся и ждем
+            current_stuck = self.stuck_counter if is_player else entity["stuck_counter"]
+            if current_stuck > 2:
+                log.info(f"ТУПИК: {entity.get('name', 'Игрок')} слишком долго не может обойти. Ждем.")
+                if is_player:
+                    self.move_queue = []
+                    self.player_target = None
+                    self.stuck_counter = 0
+                else:
+                    entity["path"] = []
+                    entity["wait_until"] = current_time + 500
+                    entity["stuck_counter"] = 0
+                return
+
             # Вычисляем векторы направления
             dx = next_x - curr_x
             dy = next_y - curr_y
@@ -513,9 +546,11 @@ class GameEngine:
                 if is_player:
                     self.move_queue = []
                     self.player_target = None
+                    self.stuck_counter = 0
                 else:
                     entity["path"] = []
                     entity["wait_until"] = current_time + 500
+                    entity["stuck_counter"] = 0
                 return
                 
             # Если шагнули в сторону, сбрасываем путь и строим новый (для игрока)
@@ -528,10 +563,12 @@ class GameEngine:
                         self.move_queue = path
                     else:
                         self.player_target = None
+                        self.stuck_counter = 0
             else:
                 entity["path"] = []
                 entity["last_move_time"] = current_time
-       
+
+
         # 3. Движение
         if check_walkable(next_x, next_y):
             if is_player:
@@ -540,6 +577,7 @@ class GameEngine:
                 if self.move_queue:
                     self.move_queue.pop(0)
                 self.last_move_time = current_time
+                self.stuck_counter = 0  # <--- Сбрасываем счётчик при успешном шаге
             else:
                 log.info(f"ШАГ: NPC {entity['name']} идет из ({entity['x']},{entity['y']}) в ({next_x},{next_y})")
                 entity["x"] = next_x
@@ -550,7 +588,10 @@ class GameEngine:
                     path.pop(0)
                 
                 entity["last_move_time"] = current_time
-
+                # Сбрасываем счётчик только если шагнули в клетку из пути (к цели)
+                if path and (next_x, next_y) == path[0]:
+                    entity["stuck_counter"] = 0
+                                
                 # Закрытие двери
                 if entity.get("last_door_pos"):
                     ldx, ldy = entity["last_door_pos"]
