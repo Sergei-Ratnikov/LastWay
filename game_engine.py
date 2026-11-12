@@ -70,6 +70,17 @@ class GameEngine:
         self.running = True
         self.exit_code = None  # "next_location", "exit"
 
+        if self.game_state.player["class"] == "Геркулес":
+            self.game_state.inventory.max_weight = 80.0
+        elif self.game_state.player["class"] == "Идальго":
+            self.game_state.inventory.max_weight = 50.0
+        elif self.game_state.player["class"] == "Аббатисса":
+            self.game_state.inventory.max_weight = 30.0
+                
+        self.inventory_open = False  # Открыт ли инвентарь
+
+        from systems.save_system import SaveSystem
+        self.save_system = SaveSystem(self.game_state, self.current_map)
 
     # -------------------------------------------------------------------------
     # ОСНОВНОЙ ЦИКЛ
@@ -145,15 +156,25 @@ class GameEngine:
         else:
             if command == "interact":
                 self._interact()
+
             elif command == "menu":
                 if self.game_state.dialog_active:
                     self.dialog_system.close_dialog()
                 else:
                     self.running = False
+
             elif command == "open_inventory":
-                pass
+                self.inventory_open = not self.inventory_open
+                log.info(f"Инвентарь: {'открыт' if self.inventory_open else 'закрыт'}")
+            
             elif command == "context_menu":
                 pass
+
+            elif command == "save_game":
+                # Пока сохраняем с фиксированным именем (имя игрока + номер + локация)
+                save_name = f"Идальго_001_{self.current_map.location_id}"
+                if self.save_system.save(save_name):
+                    self._show_message(f"Игра сохранена: {save_name}")
 
     def _interact(self):
         nx = self.game_state.player["x"] + self.facing_direction[0]
@@ -186,21 +207,68 @@ class GameEngine:
         if container:
             if container.locked:
                 self._show_message("Контейнер заперт")
-            elif not container.is_open:
+                log.info(f"КОНТЕЙНЕР: {container.id} заперт")
+                return
+            
+            if not container.is_open:
                 container.open()
-                items_text = ', '.join(container.items) if container.items else "пусто"
-                self._show_message(f"Ты открыл {container.name}. Внутри: {items_text}")
-            else:
-                self._show_message(f"{container.name} уже открыт")
+                log.info(f"КОНТЕЙНЕР: {container.id} открыт")
+            
+            if not container.items:
+                self._show_message(f"{container.name} пуст")
+                return
+            
+            items_taken = []
+            items_left = []
+            
+            # Проходим по копии списка, чтобы безопасно удалять
+            for item_id in container.items[:]:
+                if self.game_state.inventory.add_item(item_id):
+                    container.items.remove(item_id)
+                    items_taken.append(item_id)
+                    log.info(f"ПЕРЕНОС: игрок забрал {item_id} из {container.name}")
+                else:
+                    items_left.append(item_id)
+                    log.info(f"ПЕРЕНОС: {item_id} не влез в инвентарь (превышен вес)")
+            
+            # Показываем результат
+            if items_taken:
+                self._show_message(f"Из {container.name} взято: {', '.join(items_taken)}")
+            if items_left:
+                self._show_message(f"Не влезло: {', '.join(items_left)}")
+            
             return
 
         # 3. Дроп
         drop = self.current_map.get_drop_at(x, y)
         if drop:
-            items_text = ', '.join(drop.items) if drop.items else "пусто"
-            self._show_message(f"На земле: {items_text}")
+            if drop.is_empty:
+                self._show_message("Здесь пусто")
+                return
+            
+            items_text = []
+            items_not_taken = []
+            for item_id in drop.items[:]:
+                if self.game_state.inventory.add_item(item_id):
+                    drop.items.remove(item_id)
+                    items_text.append(item_id)
+                    log.info(f"ПОДБОР: игрок подобрал {item_id} из дропа {drop.id}")
+                else:
+                    items_not_taken.append(item_id)
+                    log.info(f"ПОДБОР: {item_id} не влез (превышен вес)")
+            
+            if items_text:
+                self._show_message(f"Подобрано: {', '.join(items_text)}")
+            if items_not_taken:
+                self._show_message(f"Не влезло: {', '.join(items_not_taken)}")
+            
+            if drop.is_empty:
+                if drop in self.current_map.drops:
+                    self.current_map.drops.remove(drop)
+                log.info(f"ДРОП: {drop.id} удален с карты (пуст)")
             return
 
+        
         # 4. Дверь
         tile_type = self.current_map.get_tile_type(x, y)
         if tile_type in (5, 6, 7, 8, 9):
@@ -225,6 +293,9 @@ class GameEngine:
     def update(self, current_time: int):
         """Обновляет движение игрока и NPC."""
         if self.game_state.dialog_active:
+            return
+
+        if self.inventory_open:
             return
 
         # ----- 1. Автоматическое движение игрока по пути (BFS) -----
@@ -424,6 +495,38 @@ class GameEngine:
                 close_hint = font.render("Нажми E или ESC, чтобы продолжить", True, (150, 150, 150))
                 self.screen.blit(close_hint, (55, HEIGHT - 85))
 
+        # Инвентарь
+        if self.inventory_open:
+            # Полупрозрачный фон
+            surf = pygame.Surface((WIDTH - 200, HEIGHT - 200))
+            surf.set_alpha(230)
+            surf.fill(BLACK)
+            self.screen.blit(surf, (100, 100))
+            pygame.draw.rect(self.screen, WHITE, (100, 100, WIDTH - 200, HEIGHT - 200), 3)
+
+            # Заголовок
+            title_font = pygame.font.Font(None, 36)
+            title = title_font.render("Инвентарь", True, YELLOW)
+            self.screen.blit(title, (120, 120))
+
+            # Список предметов
+            item_font = pygame.font.Font(None, 24)
+            items = self.game_state.inventory.get_items()
+
+            if not items:
+                empty = item_font.render("(пусто)", True, (150, 150, 150))
+                self.screen.blit(empty, (120, 170))
+            else:
+                for i, item_id in enumerate(items):
+                    if i >= 15:  # Ограничение на 15 строк, чтобы не вылезать
+                        break
+                    text = item_font.render(f"{i+1}. {item_id}", True, WHITE)
+                    self.screen.blit(text, (120, 170 + i * 30))
+
+            # Подсказка закрыть
+            hint = item_font.render("Нажми I, чтобы закрыть", True, (150, 150, 150))
+            self.screen.blit(hint, (120, HEIGHT - 130))
+
         # Временное сообщение (например, от контейнера)
         if self.temp_message:
             current_time = pygame.time.get_ticks()
@@ -440,6 +543,14 @@ class GameEngine:
                 self.screen.blit(text_surf, text_rect)
             else:
                 self.temp_message = None
+
+        # Памятка управления (внизу экрана)
+        help_font = pygame.font.Font(None, 20)
+        controls_text = "WASD/стрелки — движение | E — взаимодействие | I — инвентарь | ESC — меню"
+        text_surf = help_font.render(controls_text, True, (180, 180, 180))
+        text_rect = text_surf.get_rect(center=(WIDTH // 2, HEIGHT - 15))
+        self.screen.blit(text_surf, text_rect)
+
 
     def _show_message(self, text):
         """Показывает временное сообщение (например, при открытии контейнера)."""

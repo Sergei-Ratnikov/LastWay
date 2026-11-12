@@ -37,6 +37,8 @@ class InputHandler:
             return "open_inventory"
         elif event.key == pygame.K_ESCAPE:
             return "menu"
+        elif event.key == pygame.K_F5:
+            return "save_game"
         return None
 
     def _handle_mouse(self, event, game_state, current_map):

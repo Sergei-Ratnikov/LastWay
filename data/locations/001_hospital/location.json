@@ -54,7 +54,7 @@
     "x": 5,
     "y": 3,
     "name": "Старый сундук",
-    "locked": true,
+    "locked": false,
     "items": ["key_01", "note_02"]
   }
 ],

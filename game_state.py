@@ -9,6 +9,7 @@
 # - время (оставшиеся дни, время суток)
 # =============================================================================
 
+from entities.inventory import Inventory
 
 class GameState:
     """
@@ -28,6 +29,8 @@ class GameState:
             "inventory": [],                     # Список предметов (ID или объекты)
             "found_notes": 0                     # Счётчик найденных дневников
         }
+        
+        self.inventory = Inventory()
 
         # --- СЮЖЕТНЫЕ ФЛАГИ ---
         self.flags = {}                          # Словарь {ключ: значение}
