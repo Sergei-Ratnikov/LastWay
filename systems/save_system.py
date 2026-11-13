@@ -8,43 +8,68 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from logger import log
 
-class SaveSystem:
-    """Система сохранений."""
 
-    def __init__(self, game_state, current_map):
-        self.game_state = game_state
-        self.current_map = current_map
+class SaveSystem:
+    """
+    Система сохранений игры.
+
+    Работает напрямую с движком (game_engine):
+      - берёт данные для сохранения из engine.game_state и engine.current_map
+      - при загрузке создаёт новую карту и присваивает её движку
+    """
+
+    def __init__(self, game_engine):
+        """
+        Аргументы:
+            game_engine: Ссылка на GameEngine (источник game_state и current_map).
+        """
+        self.engine = game_engine
+        self.last_save_name = None  # Имя последнего сохранения
+
+        # Папка saves/ рядом с main.py
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.saves_dir = os.path.join(base_dir, "saves")
         os.makedirs(self.saves_dir, exist_ok=True)
 
+    # -------------------------------------------------------------------------
+    # ВСПОМОГАТЕЛЬНЫЕ
+    # -------------------------------------------------------------------------
     def get_save_filename(self, name):
         return os.path.join(self.saves_dir, f"{name}.json")
 
+    # -------------------------------------------------------------------------
+    # СБОР ДАННЫХ
+    # -------------------------------------------------------------------------
     def collect_data(self):
-        """Собирает все данные игры в один словарь."""
+        """Собирает все данные игры (игрок + локация) в один словарь."""
+        game_state = self.engine.game_state
+        current_map = self.engine.current_map
+
         log.info("СБОР ДАННЫХ: начинаю сбор")
-        
+
+        # Данные игрока
         player_data = {
-            "x": self.game_state.player["x"],
-            "y": self.game_state.player["y"],
-            "class": self.game_state.player["class"],
-            "inventory": self.game_state.inventory.get_items(),
-            "humanity": self.game_state.humanity,
-            "days_left": self.game_state.days_left,
+            "x": game_state.player["x"],
+            "y": game_state.player["y"],
+            "class": game_state.player["class"],
+            "inventory": game_state.inventory.get_items(),
+            "humanity": game_state.humanity,
+            "days_left": game_state.days_left,
         }
         log.info(f"СБОР: игрок на ({player_data['x']},{player_data['y']}), инвентарь: {player_data['inventory']}")
 
+        # Данные локации
         location_data = {
-            "location_id": self.current_map.location_id,
-            "doors": dict(self.game_state.door_states),
+            "location_id": current_map.location_id,
+            "doors": dict(game_state.door_states),
             "npcs": [],
             "containers": [],
             "drops": [],
         }
         log.info(f"СБОР: двери: {location_data['doors']}")
 
-        for npc in self.current_map.npcs:
+        # NPC
+        for npc in current_map.npcs:
             location_data["npcs"].append({
                 "id": npc["id"],
                 "x": npc["x"],
@@ -52,9 +77,10 @@ class SaveSystem:
                 "patrol_index": npc.get("patrol_index", 0),
                 "path": npc.get("path", []),
             })
-            log.info(f"СБОР: NPC {npc['id']} на ({npc['x']},{npc['y']}), patrol_index={npc.get('patrol_index',0)}, path={npc.get('path',[])}")
+            log.info(f"СБОР: NPC {npc['id']} на ({npc['x']},{npc['y']}), patrol_index={npc.get('patrol_index', 0)}")
 
-        for container in self.current_map.containers:
+        # Контейнеры
+        for container in current_map.containers:
             location_data["containers"].append({
                 "id": container.id,
                 "is_open": container.is_open,
@@ -62,7 +88,8 @@ class SaveSystem:
             })
             log.info(f"СБОР: контейнер {container.id}, открыт={container.is_open}, предметы={container.items}")
 
-        for drop in self.current_map.drops:
+        # Дропы
+        for drop in current_map.drops:
             location_data["drops"].append({
                 "id": drop.id,
                 "x": drop.x,
@@ -76,24 +103,38 @@ class SaveSystem:
             "location": location_data,
         }
 
+    # -------------------------------------------------------------------------
+    # СОХРАНЕНИЕ
+    # -------------------------------------------------------------------------
     def save(self, name):
-        """Сохраняет игру в файл."""
-        log.info(f"СОХРАНЕНИЕ: начинаю сохранение '{name}'")
+        """Сохраняет игру в файл <name>.json."""
+        log.info(f"СОХРАНЕНИЕ: начинаю '{name}'")
         data = self.collect_data()
         filename = self.get_save_filename(name)
+
         try:
             with open(filename, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             log.info(f"СОХРАНЕНИЕ: успешно записано в {filename}")
+            self.last_save_name = name
             return True
         except Exception as e:
             log.info(f"СОХРАНЕНИЕ: ОШИБКА {e}")
             return False
 
+    # -------------------------------------------------------------------------
+    # ЗАГРУЗКА
+    # -------------------------------------------------------------------------
     def load(self, name):
-        """Загружает игру из файла."""
-        log.info(f"ЗАГРУЗКА: начинаю загрузку '{name}'")
+        """
+        Загружает игру из файла <name>.json.
+
+        ВАЖНО: метод не просто читает данные, но и создаёт новую карту,
+        восстанавливает на ней NPC/двери/контейнеры/дропы и присваивает её движку.
+        """
+        log.info(f"ЗАГРУЗКА: начинаю '{name}'")
         filename = self.get_save_filename(name)
+
         if not os.path.exists(filename):
             log.info(f"ЗАГРУЗКА: файл не найден {filename}")
             return False
@@ -105,55 +146,96 @@ class SaveSystem:
             log.info(f"ЗАГРУЗКА: ОШИБКА чтения {e}")
             return False
 
-        # Игрок
+        game_state = self.engine.game_state
+        location_data = data["location"]
+
+        # --- 1. СОЗДАЁМ НОВУЮ КАРТУ ИЗ СОХРАНЕНИЯ ---
+        # Импорт внутри метода — чтобы избежать циклических зависимостей
+        from world.map import Map
+        new_map = Map(location_data["location_id"], game_state, self.engine.location_manager)
+        log.info(f"ЗАГРУЗКА: создана карта {location_data['location_id']}")
+
+        # --- 2. ВОССТАНАВЛИВАЕМ ИГРОКА ---
         player_data = data["player"]
-        self.game_state.player["x"] = player_data["x"]
-        self.game_state.player["y"] = player_data["y"]
-        self.game_state.player["class"] = player_data["class"]
-        self.game_state.humanity = player_data["humanity"]
-        self.game_state.days_left = player_data["days_left"]
-        self.game_state.inventory.items = player_data["inventory"].copy()
+        game_state.player["x"] = player_data["x"]
+        game_state.player["y"] = player_data["y"]
+        game_state.player["class"] = player_data["class"]
+        game_state.humanity = player_data["humanity"]
+        game_state.days_left = player_data["days_left"]
+        game_state.inventory.items = player_data["inventory"].copy()
         log.info(f"ЗАГРУЗКА: игрок на ({player_data['x']},{player_data['y']}), инвентарь={player_data['inventory']}")
 
-        # Локация
-        location_data = data["location"]
-        self.game_state.door_states = dict(location_data["doors"])
-        log.info(f"ЗАГРУЗКА: двери={location_data['doors']}")
+        # --- 3. ВОССТАНАВЛИВАЕМ ДВЕРИ ---
+        game_state.door_states = dict(location_data["doors"])
+        for coord, tile_type in location_data["doors"].items():
+            if "," in coord:
+                x_str, y_str = coord.split(",")
+                x, y = int(x_str), int(y_str)
+                if 0 <= x < new_map.width and 0 <= y < new_map.height:
+                    new_map.tiles[y][x] = tile_type
+        log.info(f"ЗАГРУЗКА: двери восстановлены: {location_data['doors']}")
 
-        # NPC
+        # --- 4. ВОССТАНАВЛИВАЕМ NPC ---
         for npc_save in location_data["npcs"]:
-            for npc in self.current_map.npcs:
+            for npc in new_map.npcs:
                 if npc["id"] == npc_save["id"]:
                     npc["x"] = npc_save["x"]
                     npc["y"] = npc_save["y"]
                     npc["patrol_index"] = npc_save["patrol_index"]
-                    # ВАЖНО: преобразуем списки обратно в кортежи
+                    # Преобразуем списки координат обратно в кортежи
                     npc["path"] = [tuple(p) for p in npc_save["path"]]
                     npc["wait_until"] = 0
-                    log.info(f"ЗАГРУЗКА: NPC {npc['id']} восстановлен на ({npc['x']},{npc['y']}), patrol_index={npc['patrol_index']}, path={npc['path']}")
+                    log.info(f"ЗАГРУЗКА: NPC {npc['id']} восстановлен на ({npc['x']},{npc['y']}), patrol_index={npc['patrol_index']}")
                     break
 
-        # Контейнеры
+        # --- 5. ВОССТАНАВЛИВАЕМ КОНТЕЙНЕРЫ ---
         for cont_save in location_data["containers"]:
-            for container in self.current_map.containers:
+            for container in new_map.containers:
                 if container.id == cont_save["id"]:
                     container.is_open = cont_save["is_open"]
                     container.items = cont_save["items"].copy()
                     log.info(f"ЗАГРУЗКА: контейнер {container.id} восстановлен, открыт={container.is_open}, предметы={container.items}")
                     break
 
-        # Дропы
-        self.current_map.drops.clear()
+        # --- 6. ВОССТАНАВЛИВАЕМ ДРОПЫ ---
+        new_map.drops.clear()
+        from entities.drop import ItemDrop
         for drop_save in location_data["drops"]:
-            from entities.drop import ItemDrop
             new_drop = ItemDrop(
                 drop_id=drop_save["id"],
                 x=drop_save["x"],
                 y=drop_save["y"],
                 items=drop_save["items"].copy()
             )
-            self.current_map.drops.append(new_drop)
+            new_map.drops.append(new_drop)
             log.info(f"ЗАГРУЗКА: дроп {new_drop.id} восстановлен на ({new_drop.x},{new_drop.y}), предметы={new_drop.items}")
+
+        # --- 7. ПРИСВАИВАЕМ КАРТУ ДВИЖКУ ---
+        self.engine.current_map = new_map
+
+        # --- 8. ПЕРЕСОЗДАЁМ DIALOG_SYSTEM ПОД НОВУЮ ЛОКАЦИЮ ---
+        # (иначе диалоги будут искаться в папке старой локации)
+        dialogs_path = os.path.join(
+            self.engine.location_manager.get_location_path(location_data["location_id"]),
+            "dialogs"
+        )
+        from systems.dialog_system import DialogSystem
+        self.engine.dialog_system = DialogSystem(game_state, dialogs_path)
+        log.info(f"ЗАГРУЗКА: dialog_system пересоздан под {location_data['location_id']}")
+
+        # --- 9. СБРАСЫВАЕМ ОЧЕРЕДЬ ДВИЖЕНИЯ ---
+        self.engine.move_queue = []
+        self.engine.player_target = None
+
+        # --- 10. СБРАСЫВАЕМ in-session состояния локаций (чтобы не тащить старые) ---
+        self.engine.location_manager.location_states = {}
 
         log.info(f"ЗАГРУЗКА: успешно завершено")
         return True
+
+    def load_last(self):
+        """Загружает последнее сохранение (по имени из last_save_name)."""
+        if not self.last_save_name:
+            log.info("ЗАГРУЗКА: нет last_save_name (ничего не сохранялось)")
+            return False
+        return self.load(self.last_save_name)
