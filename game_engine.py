@@ -176,6 +176,14 @@ class GameEngine:
                 if self.save_system.save(save_name):
                     self._show_message(f"Игра сохранена: {save_name}")
 
+            elif command == "load_game":
+                save_name = f"Идальго_001_{self.current_map.location_id}"
+                if self.save_system.load(save_name):
+                    self.current_map.reset_all_npcs_timer()
+                    self._show_message(f"Игра загружена: {save_name}")
+                else:
+                    self._show_message("Сохранение не найдено")
+
     def _interact(self):
         nx = self.game_state.player["x"] + self.facing_direction[0]
         ny = self.game_state.player["y"] + self.facing_direction[1]

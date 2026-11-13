@@ -39,6 +39,8 @@ class InputHandler:
             return "menu"
         elif event.key == pygame.K_F5:
             return "save_game"
+        elif event.key == pygame.K_F9:
+            return "load_game"
         return None
 
     def _handle_mouse(self, event, game_state, current_map):
