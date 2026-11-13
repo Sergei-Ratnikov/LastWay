@@ -49,14 +49,28 @@
 ],
 
 "containers": [
+ {
+  "id": "chest_01",
+  "x": 5,
+  "y": 3,
+  "name": "Старый сундук",
+  "locked": false,
+  "items": ["key_01", "note_02"],
+  "width": 1,
+  "height": 1,
+  "access_side": "south"
+},
+
   {
-    "id": "chest_01",
-    "x": 5,
-    "y": 3,
-    "name": "Старый сундук",
-    "locked": false,
-    "items": ["key_01", "note_02"]
-  }
+  "id": "table_01",
+  "x": 4,
+  "y": 8,
+  "width": 3,
+  "height": 1,
+  "name": "Длинный стол",
+  "locked": false,
+  "items": []
+}
 ],
 
 "drops": [

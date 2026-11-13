@@ -73,6 +73,14 @@ class GameEngine:
         from systems.save_system import SaveSystem
         self.save_system = SaveSystem(self)
 
+        self.save_menu_open = False
+        self.save_menu_mode = None  # "save" или "load"
+        self.save_menu_selected = 0
+        self.save_menu_items = []
+
+        # отработка логики подходить к объекту по клику
+        self.pending_interaction = None  # (x, y) — куда взаимодействовать после прихода
+        self.pending_target_cell = None  # (x, y) — куда идти
     # -------------------------------------------------------------------------
     # ОСНОВНОЙ ЦИКЛ
     # -------------------------------------------------------------------------
@@ -94,6 +102,40 @@ class GameEngine:
             if event.type == pygame.QUIT:
                 self.running = False
                 self.exit_code = "exit"
+
+            # Меню сохранений
+            if self.save_menu_open and event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.save_menu_open = False
+                    continue
+
+                if event.key == pygame.K_UP:
+                    self.save_menu_selected = max(0, self.save_menu_selected - 1)
+                    continue
+                if event.key == pygame.K_DOWN:
+                    self.save_menu_selected = min(len(self.save_menu_items) - 1, self.save_menu_selected + 1)
+                    continue
+
+                if event.key == pygame.K_RETURN:
+                    if self.save_menu_mode == "save":
+                        # Создаём новое автосохранение
+                        name = self.save_system.next_save_name()
+                        if self.save_system.save(name):
+                            self._show_message(f"Сохранено: {name}")
+                            self.save_menu_open = False
+                    elif self.save_menu_mode == "load":
+                        if self.save_menu_items:
+                            name = self.save_menu_items[self.save_menu_selected]
+                            if self.save_system.load(name):
+                                self.current_map.reset_all_npcs_timer()
+                                # ▼▼▼ СБРОС ОТЛОЖЕННОГО ВЗАИМОДЕЙСТВИЯ ▼▼▼
+                                self.pending_interaction = None
+                                self.pending_target_cell = None
+                                # ▲▲▲
+                                self._show_message(f"Загружено: {name}")
+                            self.save_menu_open = False
+                    continue
+
             command = self.input_handler.handle_event(event, self.game_state, self.current_map)
             if command:
                 self._process_command(command)
@@ -108,7 +150,31 @@ class GameEngine:
 
             elif cmd_type == "interact":
                 _, target_x, target_y = command
-                self._handle_interaction(target_x, target_y)
+                # Если в радиусе — взаимодействуем сразу
+                if self._is_in_range(target_x, target_y):
+                    self._handle_interaction(target_x, target_y)
+                    return
+
+                # Иначе — идём к объекту
+                approach = self._find_approach_cell(target_x, target_y)
+                if not approach:
+                    self._show_message("Не подойти к объекту")
+                    return
+
+                from world.pathfinding import find_path
+                path = find_path(
+                    self.game_state.player["x"],
+                    self.game_state.player["y"],
+                    approach[0], approach[1],
+                    self.current_map.is_walkable
+                )
+                if path:
+                    self.move_queue = path
+                    self.pending_interaction = (target_x, target_y)
+                    self.pending_target_cell = approach
+                    log.info(f"АВТО-ПОДХОД: к {approach} для взаимодействия с ({target_x},{target_y})")
+                else:
+                    self._show_message("Путь не найден")
 
             elif cmd_type == "move_to":
                 _, target_x, target_y = command
@@ -142,18 +208,17 @@ class GameEngine:
             elif command == "context_menu":
                 pass
 
-            elif command == "save_game":
-                save_name = f"Идальго_001_{self.current_map.location_id}"
-                if self.save_system.save(save_name):
-                    self._show_message(f"Игра сохранена: {save_name}")
+            elif command == "open_save_menu":
+                self.save_menu_open = True
+                self.save_menu_mode = "save"
+                self.save_menu_items = self.save_system.list_saves()
+                self.save_menu_selected = 0
 
-            elif command == "load_game":
-                # Вся логика загрузки теперь внутри SaveSystem.load_last()
-                if self.save_system.load_last():
-                    self.current_map.reset_all_npcs_timer()
-                    self._show_message(f"Загружено: {self.save_system.last_save_name}")
-                else:
-                    self._show_message("Нет сохранений для загрузки")
+            elif command == "open_load_menu":
+                self.save_menu_open = True
+                self.save_menu_mode = "load"
+                self.save_menu_items = self.save_system.list_saves()
+                self.save_menu_selected = 0
 
     def _interact(self):
         nx = self.game_state.player["x"] + self.facing_direction[0]
@@ -177,10 +242,17 @@ class GameEngine:
         # 2. Контейнер
         container = self.current_map.get_container_at(x, y)
         if container:
+            # Проверка стороны доступа
+            if not container.can_interact_from(self.game_state.player["x"], self.game_state.player["y"]):
+                self._show_message("С этой стороны не подобраться")
+                log.info(f"КОНТЕЙНЕР: {container.id} — неверная сторона доступа")
+                return
+
             if container.locked:
                 self._show_message("Контейнер заперт")
                 log.info(f"КОНТЕЙНЕР: {container.id} заперт")
                 return
+            
             if not container.is_open:
                 container.open()
                 log.info(f"КОНТЕЙНЕР: {container.id} открыт")
@@ -253,6 +325,9 @@ class GameEngine:
         if self.inventory_open:
             return
 
+        if self.save_menu_open:
+            return
+
         # Движение игрока
         if self.move_queue:
             self._move_entity_step(self.game_state.player, is_player=True)
@@ -268,6 +343,10 @@ class GameEngine:
             if keys[pygame.K_DOWN] or keys[pygame.K_s]:
                 dy = 1; self.facing_direction = (0, 1)
 
+            if dx != 0 or dy != 0:
+                self.pending_interaction = None
+                self.pending_target_cell = None
+
             if (dx != 0 or dy != 0) and current_time - self.last_move_time >= MOVE_DELAY_MS:
                 nx = self.game_state.player["x"] + dx
                 ny = self.game_state.player["y"] + dy
@@ -275,6 +354,21 @@ class GameEngine:
                     self.game_state.player["x"] = nx
                     self.game_state.player["y"] = ny
                     self.last_move_time = current_time
+
+        # Проверяем отложенное взаимодействие
+        # (подойти к объекту по клику)
+        if self.pending_interaction and not self.move_queue:
+            px, py = self.game_state.player["x"], self.game_state.player["y"]
+            tx, ty = self.pending_interaction
+            if self._is_in_range(tx, ty):
+                self._handle_interaction(tx, ty)
+                log.info(f"АВТО-ВЗАИМОДЕЙСТВИЕ: с ({tx},{ty})")
+                self.pending_interaction = None
+                self.pending_target_cell = None
+            elif self.pending_target_cell == (px, py):
+                # Мы на подходе, но не в радиусе — сброс
+                self.pending_interaction = None
+                self.pending_target_cell = None
 
         # Переход между локациями
         exit_point = self.current_map.get_exit_at(
@@ -363,8 +457,16 @@ class GameEngine:
             })
         for container in self.current_map.containers:
             state_data["containers"].append({
-                "id": container.id, "is_open": container.is_open, "items": container.items.copy()
+                "id": container.id,
+                "x": container.x,
+                "y": container.y,
+                "width": container.width,
+                "height": container.height,
+                "is_open": container.is_open,
+                "items": container.items.copy(),
+                "access_side": container.access_side,   # <-- сохраняем
             })
+
         for drop in self.current_map.drops:
             state_data["drops"].append({
                 "id": drop.id, "x": drop.x, "y": drop.y, "items": drop.items.copy()
@@ -426,6 +528,10 @@ class GameEngine:
 
         self.last_move_time = pygame.time.get_ticks()
         self.move_queue = []
+        # ▼▼▼ СБРОС ОТЛОЖЕННОГО ВЗАИМОДЕЙСТВИЯ ▼▼▼
+        self.pending_interaction = None
+        self.pending_target_cell = None
+        # ▲▲▲
 
     # -------------------------------------------------------------------------
     # ОТРИСОВКА
@@ -504,6 +610,50 @@ class GameEngine:
                 self.screen.blit(text_surf, text_rect)
             else:
                 self.temp_message = None
+
+        # Меню сохранений
+        if self.save_menu_open:
+            # Затенение
+            surf = pygame.Surface((WIDTH, HEIGHT))
+            surf.set_alpha(180)
+            surf.fill(BLACK)
+            self.screen.blit(surf, (0, 0))
+
+            # Окно
+            box = pygame.Rect(WIDTH // 2 - 250, 100, 500, 450)
+            pygame.draw.rect(self.screen, BLACK, box)
+            pygame.draw.rect(self.screen, WHITE, box, 3)
+
+            title_font = pygame.font.Font(None, 36)
+            item_font = pygame.font.Font(None, 26)
+            hint_font = pygame.font.Font(None, 20)
+
+            title_text = "Сохранить игру" if self.save_menu_mode == "save" else "Загрузить игру"
+            title = title_font.render(title_text, True, YELLOW)
+            self.screen.blit(title, (box.x + 20, box.y + 20))
+
+            # Список (для save показываем все существующие, для load — только их)
+            y = box.y + 80
+            if not self.save_menu_items:
+                empty = item_font.render("(нет сохранений)", True, (150, 150, 150))
+                self.screen.blit(empty, (box.x + 20, y))
+            else:
+                for i, name in enumerate(self.save_menu_items):
+                    color = GREEN if i == self.save_menu_selected else WHITE
+                    marker = "> " if i == self.save_menu_selected else "  "
+                    text = item_font.render(marker + name, True, color)
+                    self.screen.blit(text, (box.x + 20, y + i * 30))
+
+            # Подсказка
+            if self.save_menu_mode == "save":
+                hint = "Enter — создать новое сохранение (автономер)"
+            else:
+                hint = "Enter — загрузить выбранное"
+            hint_text = hint_font.render(hint, True, (180, 180, 180))
+            self.screen.blit(hint_text, (box.x + 20, box.y + box.height - 60))
+
+            esc_text = hint_font.render("ESC — закрыть", True, (180, 180, 180))
+            self.screen.blit(esc_text, (box.x + 20, box.y + box.height - 30))
 
         # Памятка
         help_font = pygame.font.Font(None, 20)
@@ -650,3 +800,52 @@ class GameEngine:
                         self.current_map.close_door(ldx, ldy)
                         self.current_map.reset_npcs_near_door(ldx, ldy)
                         entity["last_door_pos"] = None
+
+    def _find_approach_cell(self, obj_x, obj_y):
+        """
+        Находит клетку, к которой нужно подойти для взаимодействия с объектом в (obj_x, obj_y).
+        Учитывает access_side у контейнеров.
+        Возвращает (x, y) или None, если подойти некуда.
+        """
+        container = self.current_map.get_container_at(obj_x, obj_y)
+        if container and container.access_side != "all":
+            side = container.access_side
+            # Клетки-кандидаты в зависимости от стороны
+            candidates = []
+            if side == "north":
+                for dx in range(container.width):
+                    candidates.append((container.x + dx, container.y - 1))
+            elif side == "south":
+                for dx in range(container.width):
+                    candidates.append((container.x + dx, container.y + container.height))
+            elif side == "west":
+                for dy in range(container.height):
+                    candidates.append((container.x - 1, container.y + dy))
+            elif side == "east":
+                for dy in range(container.height):
+                    candidates.append((container.x + container.width, container.y + dy))
+            # Ищем первую проходимую
+            for cx, cy in candidates:
+                if self.current_map.is_walkable(cx, cy):
+                    return (cx, cy)
+            return None
+
+        # Для всех остальных объектов (NPC, дропы, двери, всесторонние контейнеры)
+        # ищем любую соседнюю проходимую клетку
+        px, py = self.game_state.player["x"], self.game_state.player["y"]
+        best = None
+        best_dist = 9999
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                cx, cy = obj_x + dx, obj_y + dy
+                if self.current_map.is_walkable(cx, cy):
+                    dist = abs(px - cx) + abs(py - cy)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best = (cx, cy)
+        return best
+
+
+    

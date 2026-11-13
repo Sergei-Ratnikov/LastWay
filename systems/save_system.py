@@ -83,10 +83,14 @@ class SaveSystem:
         for container in current_map.containers:
             location_data["containers"].append({
                 "id": container.id,
+                "x": container.x,
+                "y": container.y,
+                "width": container.width,
+                "height": container.height,
                 "is_open": container.is_open,
                 "items": container.items.copy(),
+                "access_side": container.access_side,
             })
-            log.info(f"СБОР: контейнер {container.id}, открыт={container.is_open}, предметы={container.items}")
 
         # Дропы
         for drop in current_map.drops:
@@ -194,7 +198,11 @@ class SaveSystem:
                 if container.id == cont_save["id"]:
                     container.is_open = cont_save["is_open"]
                     container.items = cont_save["items"].copy()
-                    log.info(f"ЗАГРУЗКА: контейнер {container.id} восстановлен, открыт={container.is_open}, предметы={container.items}")
+                    container.access_side = cont_save.get("access_side", "all")
+                    container.width = cont_save.get("width", 1)
+                    container.height = cont_save.get("height", 1)
+                    log.info(f"ЗАГРУЗКА: контейнер {container.id} восстановлен, "
+                             f"открыт={container.is_open}, сторона={container.access_side}")
                     break
 
         # --- 6. ВОССТАНАВЛИВАЕМ ДРОПЫ ---
@@ -239,3 +247,29 @@ class SaveSystem:
             log.info("ЗАГРУЗКА: нет last_save_name (ничего не сохранялось)")
             return False
         return self.load(self.last_save_name)
+
+    def list_saves(self):
+        """Возвращает список имён файлов сохранений (без .json), отсортированный."""
+        if not os.path.isdir(self.saves_dir):
+            return []
+        files = [f for f in os.listdir(self.saves_dir) if f.endswith(".json")]
+        return sorted([f[:-5] for f in files])
+
+    def list_saves(self):
+        """Возвращает список имён файлов сохранений (без .json), отсортированный."""
+        if not os.path.isdir(self.saves_dir):
+            return []
+        files = [f for f in os.listdir(self.saves_dir) if f.endswith(".json")]
+        return sorted([f[:-5] for f in files])
+
+    def next_save_name(self):
+        """Генерирует следующий свободный автономер для сохранения."""
+        base = f"Идальго"
+        loc = self.engine.current_map.location_id
+        existing = self.list_saves()
+        n = 1
+        while True:
+            candidate = f"{base}_{n:03d}_{loc}"
+            if candidate not in existing:
+                return candidate
+            n += 1

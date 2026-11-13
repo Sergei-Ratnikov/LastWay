@@ -43,7 +43,10 @@ class Map:
                 y=container_data.get("y"),
                 name=container_data.get("name", "Сундук"),
                 locked=container_data.get("locked", False),
-                items=container_data.get("items", [])
+                items=container_data.get("items", []),
+                width=container_data.get("width", 1),
+                height=container_data.get("height", 1),
+                access_side=container_data.get("access_side", "all")
             )
             self.containers.append(container)
 
@@ -156,7 +159,6 @@ class Map:
 
         return True
 
-
     def is_walkable_static(self, x, y):
         """
         Проверка для BFS: стены и контейнеры. 
@@ -183,7 +185,6 @@ class Map:
             return False
             
         return True
-
 
     def is_walkable_for_cat(self, x, y):
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
@@ -303,20 +304,41 @@ class Map:
         for container in self.containers:
             if container.is_destroyed:
                 continue
-            rect = pygame.Rect(container.x * TILE_SIZE, container.y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-            # Цвет: замок и состояние
+            rect = pygame.Rect(
+                container.x * TILE_SIZE,
+                container.y * TILE_SIZE,
+                container.width * TILE_SIZE,
+                container.height * TILE_SIZE
+            )
             if container.locked:
-                color = (150, 50, 0)  # тёмно-оранжевый
+                color = (150, 50, 0)
             elif container.is_open:
-                color = (180, 120, 50)  # светло-коричневый
+                color = (180, 120, 50)
             else:
-                color = (120, 80, 30)  # коричневый
+                color = (120, 80, 30)
             pygame.draw.rect(screen, color, rect)
             pygame.draw.rect(screen, BLACK, rect, 2)
             font = pygame.font.Font(None, 16)
             name_text = font.render(container.name, True, WHITE)
             screen.blit(name_text, (container.x * TILE_SIZE, container.y * TILE_SIZE - 15))
 
+            # --- МАРКЕР СТОРОНЫ ДОСТУПА ---
+            if container.access_side != "all":
+                cx, cy = rect.centerx, rect.centery
+                radius = 4
+                if container.access_side == "north":
+                    marker_pos = (cx, rect.top + 6)
+                elif container.access_side == "south":
+                    marker_pos = (cx, rect.bottom - 6)
+                elif container.access_side == "west":
+                    marker_pos = (rect.left + 6, cy)
+                elif container.access_side == "east":
+                    marker_pos = (rect.right - 6, cy)
+                else:
+                    marker_pos = None
+                if marker_pos:
+                    pygame.draw.circle(screen, WHITE, marker_pos, radius)
+                    pygame.draw.circle(screen, BLACK, marker_pos, radius, 1)
 
         # 4. Отрисовка дропов (предметов на земле)
         for drop in self.drops:
@@ -429,10 +451,10 @@ class Map:
             if exit_data.get("x") == x and exit_data.get("y") == y:
                 return exit_data
         return None
-    
+
     def get_container_at(self, x, y):
         for container in self.containers:
-            if container.x == x and container.y == y and not container.is_destroyed:
+            if not container.is_destroyed and container.occupies(x, y):
                 return container
         return None
 
