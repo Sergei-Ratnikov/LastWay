@@ -41,3 +41,11 @@ class LocationManager:
             if loc.get("start"):
                 return loc["id"]
         return self.registry["locations"][0]["id"]
+
+    def save_location_state(self, location_id, state_data):
+        """Сохраняет состояние локации в память (при уходе)."""
+        self.location_states[location_id] = state_data
+
+    def get_location_state(self, location_id):
+        """Возвращает сохранённое состояние локации или None."""
+        return self.location_states.get(location_id)

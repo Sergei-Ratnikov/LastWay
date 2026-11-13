@@ -431,20 +431,101 @@ class GameEngine:
     # ПЕРЕХОД МЕЖДУ ЛОКАЦИЯМИ
     # -------------------------------------------------------------------------
     def switch_location(self, target_location_id, target_exit_id):
-        # Сохраняем состояние текущей локации (если нужно)
-        # Загружаем новую локацию
+        # --- 1. СОХРАНЯЕМ СОСТОЯНИЕ ТЕКУЩЕЙ ЛОКАЦИИ ---
+        current_location_id = self.current_map.location_id
+        state_data = {
+            "doors": dict(self.game_state.door_states),
+            "npcs": [],
+            "containers": [],
+            "drops": [],
+        }
+        for npc in self.current_map.npcs:
+            state_data["npcs"].append({
+                "id": npc["id"],
+                "x": npc["x"],
+                "y": npc["y"],
+                "patrol_index": npc.get("patrol_index", 0),
+                "path": npc.get("path", []),
+            })
+        for container in self.current_map.containers:
+            state_data["containers"].append({
+                "id": container.id,
+                "is_open": container.is_open,
+                "items": container.items.copy(),
+            })
+        for drop in self.current_map.drops:
+            state_data["drops"].append({
+                "id": drop.id,
+                "x": drop.x,
+                "y": drop.y,
+                "items": drop.items.copy(),
+            })
+        self.location_manager.save_location_state(current_location_id, state_data)
+        log.info(f"ПЕРЕХОД: сохранено состояние локации {current_location_id}")
+
+        # --- 2. ЗАГРУЖАЕМ НОВУЮ ЛОКАЦИЮ ---
         self.current_map = Map(target_location_id, self.game_state, self.location_manager)
-        
-        # Находим выход, на который нужно поставить игрока
+
+        # Очищаем состояния дверей от предыдущей локации
+        self.game_state.door_states = {}
+
+        # --- 3. ПРИМЕНЯЕМ СОХРАНЁННОЕ СОСТОЯНИЕ, ЕСЛИ ОНО ЕСТЬ ---
+        saved_state = self.location_manager.get_location_state(target_location_id)
+        if saved_state:
+            log.info(f"ПЕРЕХОД: восстановлено состояние локации {target_location_id}")
+            
+            # Двери
+            for coord, tile_type in saved_state["doors"].items():
+                if "," in coord:
+                    x_str, y_str = coord.split(",")
+                    x, y = int(x_str), int(y_str)
+                    if 0 <= x < self.current_map.width and 0 <= y < self.current_map.height:
+                        self.current_map.tiles[y][x] = tile_type
+                        self.game_state.door_states[coord] = tile_type
+
+            # NPC
+            for npc_save in saved_state["npcs"]:
+                for npc in self.current_map.npcs:
+                    if npc["id"] == npc_save["id"]:
+                        npc["x"] = npc_save["x"]
+                        npc["y"] = npc_save["y"]
+                        npc["patrol_index"] = npc_save["patrol_index"]
+                        npc["path"] = [tuple(p) for p in npc_save["path"]]
+                        npc["wait_until"] = 0
+                        break
+
+            # Контейнеры
+            for cont_save in saved_state["containers"]:
+                for container in self.current_map.containers:
+                    if container.id == cont_save["id"]:
+                        container.is_open = cont_save["is_open"]
+                        container.items = cont_save["items"].copy()
+                        break
+
+            # Дропы
+            self.current_map.drops.clear()
+            for drop_save in saved_state["drops"]:
+                from entities.drop import ItemDrop
+                new_drop = ItemDrop(
+                    drop_id=drop_save["id"],
+                    x=drop_save["x"],
+                    y=drop_save["y"],
+                    items=drop_save["items"].copy()
+                )
+                self.current_map.drops.append(new_drop)
+
+        # --- 4. СТАВИМ ИГРОКА НА ТОЧКУ ВЫХОДА ---
         for exit_data in self.current_map.exits:
             if exit_data.get("id") == target_exit_id:
                 self.game_state.player["x"] = exit_data["spawn_x"]
                 self.game_state.player["y"] = exit_data["spawn_y"]
                 break
         
-        # Сбрасываем таймер движения
         self.last_move_time = pygame.time.get_ticks()
         self.move_queue = []
+
+
+
     # -------------------------------------------------------------------------
     # ОТРИСОВКА
     # -------------------------------------------------------------------------
