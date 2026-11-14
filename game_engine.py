@@ -60,6 +60,7 @@ class GameEngine:
         self.exit_code = None
 
         # Лимит веса по классу
+        #TODO Перенести потом в описание класса!!!
         if self.game_state.player["class"] == "Геркулес":
             self.game_state.inventory.max_weight = 80.0
         elif self.game_state.player["class"] == "Идальго":
@@ -81,6 +82,11 @@ class GameEngine:
         # отработка логики подходить к объекту по клику
         self.pending_interaction = None  # (x, y) — куда взаимодействовать после прихода
         self.pending_target_cell = None  # (x, y) — куда идти
+
+        # отработка логики догонять NPC для взаимодействия
+        self.pending_interaction = None  # (x, y) — куда взаимодействовать
+        self.pending_target_cell = None  # (x, y) — куда идти
+        self.pending_npc_id = None       # ID NPC, если догоняем движущегося
     # -------------------------------------------------------------------------
     # ОСНОВНОЙ ЦИКЛ
     # -------------------------------------------------------------------------
@@ -131,9 +137,11 @@ class GameEngine:
                                 # ▼▼▼ СБРОС ОТЛОЖЕННОГО ВЗАИМОДЕЙСТВИЯ ▼▼▼
                                 self.pending_interaction = None
                                 self.pending_target_cell = None
+                                self.pending_npc_id = None
                                 # ▲▲▲
                                 self._show_message(f"Загружено: {name}")
                             self.save_menu_open = False
+
                     continue
 
             command = self.input_handler.handle_event(event, self.game_state, self.current_map)
@@ -150,13 +158,27 @@ class GameEngine:
 
             elif cmd_type == "interact":
                 _, target_x, target_y = command
-                # Если в радиусе — взаимодействуем сразу
+
+                # Сначала: если в радиусе — сразу взаимодействуем
                 if self._is_in_range(target_x, target_y):
+                    self.pending_npc_id = None
+                    self.pending_interaction = None
+                    self.pending_target_cell = None
                     self._handle_interaction(target_x, target_y)
                     return
 
-                # Иначе — идём к объекту
-                approach = self._find_approach_cell(target_x, target_y)
+                # Проверяем, есть ли в этой клетке NPC (движущийся или нет)
+                npc = self.current_map.get_npc_at(target_x, target_y)
+                if npc:
+                    # Запоминаем, что цель — этот NPC (по ID)
+                    self.pending_npc_id = npc["id"]
+                    self.pending_interaction = (npc["x"], npc["y"])
+                else:
+                    self.pending_npc_id = None
+                    self.pending_interaction = (target_x, target_y)
+
+                # Строим путь к текущей позиции цели
+                approach = self._find_approach_cell(self.pending_interaction[0], self.pending_interaction[1])
                 if not approach:
                     self._show_message("Не подойти к объекту")
                     return
@@ -170,9 +192,8 @@ class GameEngine:
                 )
                 if path:
                     self.move_queue = path
-                    self.pending_interaction = (target_x, target_y)
                     self.pending_target_cell = approach
-                    log.info(f"АВТО-ПОДХОД: к {approach} для взаимодействия с ({target_x},{target_y})")
+                    log.info(f"АВТО-ПОДХОД: к {approach} для {('NPC ' + self.pending_npc_id) if self.pending_npc_id else ('(' + str(target_x) + ',' + str(target_y) + ')')}")
                 else:
                     self._show_message("Путь не найден")
 
@@ -346,6 +367,7 @@ class GameEngine:
             if dx != 0 or dy != 0:
                 self.pending_interaction = None
                 self.pending_target_cell = None
+                self.pending_npc_id = None
 
             if (dx != 0 or dy != 0) and current_time - self.last_move_time >= MOVE_DELAY_MS:
                 nx = self.game_state.player["x"] + dx
@@ -357,18 +379,52 @@ class GameEngine:
 
         # Проверяем отложенное взаимодействие
         # (подойти к объекту по клику)
-        if self.pending_interaction and not self.move_queue:
+        # Обработка отложенного взаимодействия
+        if self.pending_interaction:
             px, py = self.game_state.player["x"], self.game_state.player["y"]
+
+            # Если цель — движущийся NPC, обновляем её позицию
+            if self.pending_npc_id:
+                npc = None
+                for other in self.current_map.npcs:
+                    if other["id"] == self.pending_npc_id:
+                        npc = other
+                        break
+                if npc:
+                    self.pending_interaction = (npc["x"], npc["y"])
+                else:
+                    # NPC исчез (например, умер) — сбрасываем
+                    self.pending_interaction = None
+                    self.pending_target_cell = None
+                    self.pending_npc_id = None
+
             tx, ty = self.pending_interaction
+
+            # Если уже в радиусе — взаимодействуем
             if self._is_in_range(tx, ty):
                 self._handle_interaction(tx, ty)
                 log.info(f"АВТО-ВЗАИМОДЕЙСТВИЕ: с ({tx},{ty})")
                 self.pending_interaction = None
                 self.pending_target_cell = None
-            elif self.pending_target_cell == (px, py):
-                # Мы на подходе, но не в радиусе — сброс
-                self.pending_interaction = None
-                self.pending_target_cell = None
+                self.pending_npc_id = None
+            elif not self.move_queue:
+                # Путь кончился, но мы не в радиусе — перестраиваем путь (NPC мог сдвинуться)
+                approach = self._find_approach_cell(tx, ty)
+                if approach:
+                    from world.pathfinding import find_path
+                    new_path = find_path(px, py, approach[0], approach[1], self.current_map.is_walkable)
+                    if new_path:
+                        self.move_queue = new_path
+                        self.pending_target_cell = approach
+                        log.info(f"ПЕРЕСЧЁТ: новый подход к {approach}")
+                    else:
+                        self.pending_interaction = None
+                        self.pending_target_cell = None
+                        self.pending_npc_id = None
+                else:
+                    self.pending_interaction = None
+                    self.pending_target_cell = None
+                    self.pending_npc_id = None
 
         # Переход между локациями
         exit_point = self.current_map.get_exit_at(
@@ -531,6 +587,7 @@ class GameEngine:
         # ▼▼▼ СБРОС ОТЛОЖЕННОГО ВЗАИМОДЕЙСТВИЯ ▼▼▼
         self.pending_interaction = None
         self.pending_target_cell = None
+        self.pending_npc_id = None
         # ▲▲▲
 
     # -------------------------------------------------------------------------
@@ -705,6 +762,17 @@ class GameEngine:
                 return self.current_map.is_walkable(tx, ty)
             return self.current_map.is_walkable_for_npc(tx, ty, entity)
 
+        # --- ПРЕВЕНТИВНОЕ РАСХОЖДЕНИЕ ---
+        # Если мы NPC и следующая клетка занята другим NPC с меньшим ID — уступаем заранее.
+        if not is_player:
+            other_npc = self.current_map.get_npc_at(next_x, next_y)
+            if other_npc and other_npc["id"] < entity["id"]:
+                # Уступаем только если тот NPC движется в нашу сторону (встречное движение)
+                if other_npc.get("path") and other_npc["path"][0] == (curr_x, curr_y):
+                    log.info(f"ПРЕВЕНТИВ: {entity['name']} уступает {other_npc['name']}")
+                    entity["wait_until"] = current_time + 400
+                    return
+
         blocked = not check_walkable(next_x, next_y)
 
         # Встречное движение
@@ -831,20 +899,17 @@ class GameEngine:
             return None
 
         # Для всех остальных объектов (NPC, дропы, двери, всесторонние контейнеры)
-        # ищем любую соседнюю проходимую клетку
+        # ищем ТОЛЬКО ортогональную соседнюю проходимую клетку
         px, py = self.game_state.player["x"], self.game_state.player["y"]
         best = None
         best_dist = 9999
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx == 0 and dy == 0:
-                    continue
-                cx, cy = obj_x + dx, obj_y + dy
-                if self.current_map.is_walkable(cx, cy):
-                    dist = abs(px - cx) + abs(py - cy)
-                    if dist < best_dist:
-                        best_dist = dist
-                        best = (cx, cy)
+        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:  # только 4 стороны
+            cx, cy = obj_x + dx, obj_y + dy
+            if self.current_map.is_walkable(cx, cy):
+                dist = abs(px - cx) + abs(py - cy)
+                if dist < best_dist:
+                    best_dist = dist
+                    best = (cx, cy)
         return best
 
 
