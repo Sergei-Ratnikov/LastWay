@@ -1,4 +1,9 @@
 # world/map.py
+# =============================================================================
+# КАРТА ЛОКАЦИИ
+# Загружает данные из JSON, управляет тайлами, NPC, животными, контейнерами, дропами.
+# =============================================================================
+
 import json
 import pygame
 import os
@@ -8,8 +13,11 @@ from world.location_manager import LocationManager
 from world.tile_data import TileData
 from logger import log
 
-class Map:
+# Импорты классов сущностей
+from entities.npc import NPC
+from entities.animal import Animal
 
+class Map:
     def __init__(self, location_id, game_state, location_manager=None):
         self.location_id = location_id
         self.game_state = game_state
@@ -17,24 +25,64 @@ class Map:
         self.width = 0
         self.height = 0
         self.tiles = []
-        self.npcs = []
+        
+        # Сущности на карте
+        self.npcs = []          # список объектов NPC
+        self.animals = []       # список объектов Animal (вместо cats)
+        self.containers = []    # список объектов Container
+        self.drops = []         # список объектов ItemDrop
+        
         self.exits = []
-        self.containers = []    # список объектов Container - entities/container.py
-        self.drops = []         # список объектов ItemDrop - entities/drop.py
-        self.cats = []          # кошка - entities/cat.py
         self.player_start = (0, 0)
         self.tile_data = TileData()
         self.load()
-
+    
     def load(self):
+        """Загружает данные локации из JSON и создаёт объекты сущностей."""
         data = self.location_manager.get_location_data(self.location_id)
-        
         self.width = data.get("width", 18)
         self.height = data.get("height", 14)
         self.tiles = data.get("tiles", [])
-        self.npcs = data.get("npcs", [])
-
-        # Загрузка контейнеров
+        
+        # -------------------------------------------------------------------------
+        # ЗАГРУЗКА NPC (создаём объекты NPC)
+        # -------------------------------------------------------------------------
+        npc_refs = data.get("npcs", [])
+        for npc_ref in npc_refs:
+            npc_id = npc_ref.get("npc_id") or npc_ref.get("id")
+            npc_path = os.path.join(
+                self.location_manager.get_location_path(self.location_id),
+                "npcs",
+                f"{npc_id}.json"
+            )
+            try:
+                with open(npc_path, "r", encoding="utf-8") as f:
+                    npc_data = json.load(f)
+            except Exception as e:
+                log.warning(f"Ошибка загрузки NPC {npc_id}: {e}")
+                continue
+            
+            # Создаём объект NPC
+            npc = NPC(
+                npc_id=npc_id,
+                name=npc_data.get("name", "Незнакомец"),
+                x=npc_ref.get("x", 0),
+                y=npc_ref.get("y", 0),
+                dialog_id=npc_data.get("dialog_id", npc_id),
+                gender=npc_data.get("gender", "male")
+            )
+            
+            # Устанавливаем дополнительные поля из JSON
+            npc.movement = npc_data.get("movement", "stationary")
+            npc.move_delay_ms = npc_data.get("move_delay_ms", 1000)
+            npc.patrol_points = npc_data.get("patrol_points", [])
+            npc.follow_target = npc_data.get("follow_target", None)
+            
+            self.npcs.append(npc)
+        
+        # -------------------------------------------------------------------------
+        # ЗАГРУЗКА КОНТЕЙНЕРОВ
+        # -------------------------------------------------------------------------
         for container_data in data.get("containers", []):
             from entities.container import Container
             container = Container(
@@ -49,8 +97,10 @@ class Map:
                 access_side=container_data.get("access_side", "all")
             )
             self.containers.append(container)
-
-        # Загрузка дропов
+        
+        # -------------------------------------------------------------------------
+        # ЗАГРУЗКА ДРОПОВ
+        # -------------------------------------------------------------------------
         for drop_data in data.get("drops", []):
             from entities.drop import ItemDrop
             drop = ItemDrop(
@@ -60,71 +110,56 @@ class Map:
                 items=drop_data.get("items", [])
             )
             self.drops.append(drop)
-
-        # Загрузка кошек (эмерджентные NPC)
-        for cat_data in data.get("cats", []):
-            from entities.cat import Cat
-            cat = Cat(
-                cat_id=cat_data.get("id"),
-                x=cat_data.get("x"),
-                y=cat_data.get("y"),
-                food_pos=cat_data.get("food_pos"),
-                bed_pos=cat_data.get("bed_pos"),
-                toy_pos=cat_data.get("toy_pos")
+        
+        # -------------------------------------------------------------------------
+        # ЗАГРУЗКА ЖИВОТНЫХ (создаём объекты Animal)
+        # -------------------------------------------------------------------------
+        for animal_data in data.get("cats", []):  # Пока читаем из "cats" для совместимости
+            animal = Animal(
+                animal_id=animal_data.get("id"),
+                name="Кошка",
+                x=animal_data.get("x", 0),
+                y=animal_data.get("y", 0),
+                species="cat",
+                behavior_type="emergent_needs"
             )
-            self.cats.append(cat)
-
-        # Загрузка данных NPC из отдельных файлов
-        npcs_loaded = []
-        for npc_ref in self.npcs:
-            npc_id = npc_ref.get("npc_id") or npc_ref.get("id")
-            npc_path = os.path.join(
-                self.location_manager.get_location_path(self.location_id),
-                "npcs",
-                f"{npc_id}.json"
-            )
-            try:
-                with open(npc_path, "r", encoding="utf-8") as f:
-                    npc_data = json.load(f)
-            except Exception as e:
-                log.warning(f"Ошибка загрузки NPC {npc_id}: {e}")
-                continue
-
-            # Объединяем данные из location.json (координаты) и из файла NPC (параметры)
-            npcs_loaded.append({
-                "id": npc_id,
-                "x": npc_ref.get("x", 0),
-                "y": npc_ref.get("y", 0),
-                "name": npc_data.get("name", "Незнакомец"),
-                "dialog_id": npc_data.get("dialog_id", npc_id),
-                "movement": npc_data.get("movement", "stationary"),
-                "move_delay_ms": npc_data.get("move_delay_ms", 1000),
-                "patrol_points": npc_data.get("patrol_points", []),
-                "patrol_index": 0,
-                "last_move_time": 0,
-                "stuck_counter": 0,
-                "follow_target": npc_data.get("follow_target", None)
-            })
-
-        self.npcs = npcs_loaded
-
+            
+            # Устанавливаем точки интереса
+            food_pos = animal_data.get("food_pos")
+            bed_pos = animal_data.get("bed_pos")
+            toy_pos = animal_data.get("toy_pos")
+            
+            if food_pos:
+                animal.points_of_interest["food"] = tuple(food_pos)
+            if bed_pos:
+                animal.points_of_interest["home"] = tuple(bed_pos)
+            if toy_pos:
+                animal.points_of_interest["toy"] = tuple(toy_pos)
+            
+            self.animals.append(animal)
+        
+        # -------------------------------------------------------------------------
+        # ВЫХОДЫ И СТАРТОВАЯ ПОЗИЦИЯ
+        # -------------------------------------------------------------------------
         self.exits = data.get("exits", [])
         self.player_start = data.get("player_start", [1, 1])
-
+    
+    # -------------------------------------------------------------------------
+    # ПРОВЕРКИ ПРОХОДИМОСТИ
+    # -------------------------------------------------------------------------
+    
     def is_walkable(self, x, y):
         """
         Проходимость для игрока: пол (1), открытая дверь (2), и нет NPC
         """
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
             return False
-        
         # Нельзя проходить сквозь NPC и контейнеры
         if self.get_npc_at(x, y) or self.get_container_at(x, y):
             return False
-
         tile = self.tiles[y][x]
         return self.tile_data.is_walkable(tile)
-
+    
     def is_walkable_for_npc(self, x, y, current_npc, ignore_doors=False):
         """
         Проверяет, может ли NPC войти в клетку (x, y).
@@ -132,7 +167,6 @@ class Map:
         """
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
             return False
-
         tile = self.tiles[y][x]
         if ignore_doors:
             # Двери считаем проходимыми, стены — нет
@@ -143,22 +177,18 @@ class Map:
         else:
             if not self.tile_data.is_walkable(tile):
                 return False
-
         # Нельзя проходить сквозь игрока
         if self.game_state.player["x"] == x and self.game_state.player["y"] == y:
             return False
-
         # Нельзя проходить сквозь других NPC
         for npc in self.npcs:
-            if npc != current_npc and npc["x"] == x and npc["y"] == y:
+            if npc != current_npc and npc.x == x and npc.y == y:
                 return False
-
         # Нельзя проходить сквозь контейнеры
         if self.get_container_at(x, y) is not None:
             return False
-
         return True
-
+    
     def is_walkable_static(self, x, y):
         """
         Проверка для BFS: стены и контейнеры. 
@@ -166,40 +196,36 @@ class Map:
         """
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
             return False
-            
         tile = self.tiles[y][x]
         prop = self.tile_data.get(tile)
         if not prop:
             return False
-            
         # Двери считаем проходимыми для прокладки маршрута
         if prop.get("is_door", False):
             return True
-            
         # Стены и прочее (если не walkable) блокируют
         if not prop.get("walkable", False):
             return False
-            
         # Контейнеры (сундуки) блокируют
         if self.get_container_at(x, y) is not None:
             return False
-            
         return True
-
-    def is_walkable_for_cat(self, x, y):
+    
+    def is_walkable_for_animal(self, x, y):
+        """Проходимость для животных."""
         if x < 0 or x >= self.width or y < 0 or y >= self.height:
             return False
         tile = self.tiles[y][x]
         if not self.tile_data.is_walkable(tile):
             return False
-        # Кошка не может проходить сквозь NPC и игрока
+        # Животное не может проходить сквозь NPC и игрока
         if self.get_npc_at(x, y) is not None:
             return False
         if self.game_state.player["x"] == x and self.game_state.player["y"] == y:
             return False
-        # Дропы и контейнеры НЕ блокируют кошку
+        # Дропы и контейнеры НЕ блокируют животное
         return True
-
+    
     def is_door(self, x, y):
         """Универсальная проверка: является ли клетка дверью (открытой или закрытой)."""
         tile = self.get_tile_type(x, y)
@@ -207,7 +233,7 @@ class Map:
             return False
         prop = self.tile_data.get(tile)
         return prop.get("is_door", False) if prop else False
-
+    
     def _get_adjacent_door(self, x, y):
         """Ищет соседнюю дверь (по горизонтали или вертикали), чтобы сделать дверь шириной в 2 клетки."""
         # Проверяем 4 направления
@@ -216,21 +242,18 @@ class Map:
             if self.is_door(nx, ny):
                 return (nx, ny)
         return None
-
+    
     def open_door(self, x, y):
         if x == self.game_state.player["x"] and y == self.game_state.player["y"]:
             log.warning("Нельзя открыть дверь там, где стоит игрок")
             return False
-            
         if not self.is_door(x, y):
             log.warning(f"Не удалось открыть: ({x},{y}) не дверь")
             return False
-
         # Открываем первую половину
         self.tiles[y][x] = 2
         self.game_state.set_door_state(x, y, 2)
         log.info(f"Дверь {x},{y} успешно открыта")
-        
         # Ищем и открываем вторую половину
         adjacent = self._get_adjacent_door(x, y)
         if adjacent:
@@ -238,18 +261,15 @@ class Map:
             self.tiles[ay][ax] = 2
             self.game_state.set_door_state(ax, ay, 2)
             log.info(f"Соседняя дверь {ax},{ay} тоже открыта (дверь 2x1)")
-            
         return True
-
+    
     def close_door(self, x, y):
         if not self.is_door(x, y):
             return False
-
         # Закрываем первую половину
         self.tiles[y][x] = 5
         self.game_state.set_door_state(x, y, 5)
         log.info(f"Дверь {x},{y} закрыта")
-        
         # Ищем и закрываем вторую половину
         adjacent = self._get_adjacent_door(x, y)
         if adjacent:
@@ -257,40 +277,73 @@ class Map:
             self.tiles[ay][ax] = 5
             self.game_state.set_door_state(ax, ay, 5)
             log.info(f"Соседняя дверь {ax},{ay} тоже закрыта")
-            
         return True
-
+    
     def get_tile_type(self, x, y):
         if 0 <= x < self.width and 0 <= y < self.height:
             return self.tiles[y][x]
         return None
-
+    
     def set_tile(self, x, y, tile_type):
         if 0 <= x < self.width and 0 <= y < self.height:
             self.tiles[y][x] = tile_type
-
+    
+    # -------------------------------------------------------------------------
+    # ПОИСК СУЩНОСТЕЙ ПО КООРДИНАТАМ
+    # -------------------------------------------------------------------------
+    
     def get_npc_at(self, x, y):
+        """Возвращает NPC в клетке (x, y) или None."""
         for npc in self.npcs:
-            if npc["x"] == x and npc["y"] == y:
+            if npc.x == x and npc.y == y:
                 return npc
         return None
-
+    
+    def get_animal_at(self, x, y):
+        """Возвращает животное в клетке (x, y) или None."""
+        for animal in self.animals:
+            if animal.x == x and animal.y == y:
+                return animal
+        return None
+    
+    def get_container_at(self, x, y):
+        for container in self.containers:
+            if not container.is_destroyed and container.occupies(x, y):
+                return container
+        return None
+    
+    def get_drop_at(self, x, y):
+        '''Возвращает кучу предметов в клетке (x, y) или None'''
+        for drop in self.drops:
+            if drop.x == x and drop.y == y and not drop.is_empty:
+                return drop
+        return None
+    
+    def get_exit_at(self, x, y):
+        '''обработка перехода между локациями'''
+        for exit_data in self.exits:
+            if exit_data.get("x") == x and exit_data.get("y") == y:
+                return exit_data
+        return None
+    
+    # -------------------------------------------------------------------------
+    # ОТРИСОВКА
+    # -------------------------------------------------------------------------
+    
     def render(self, screen, camera_x, camera_y):
         # 1. Отрисовка тайлов
         for y in range(self.height):
             for x in range(self.width):
                 tile = self.tiles[y][x]
                 rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-
                 prop = self.tile_data.get(tile)
                 if prop and "color" in prop:
                     color = tuple(prop["color"])
                 else:
                     color = BLACK
-
-                pygame.draw.rect(screen, color, rect)      # ← ЭТО БЫЛО ПРОПУЩЕНО
+                pygame.draw.rect(screen, color, rect)
                 pygame.draw.rect(screen, BLACK, rect, 1)   # рамка
-
+        
         # 2. Отрисовка точек выхода (поверх тайлов)
         for exit_data in self.exits:
             x = exit_data.get("x")
@@ -299,7 +352,7 @@ class Map:
                 rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
                 pygame.draw.rect(screen, EXIT_COLOR, rect)
                 pygame.draw.rect(screen, BLACK, rect, 2)   # толстая рамка
-
+        
         # 3. Отрисовка контейнеров
         for container in self.containers:
             if container.is_destroyed:
@@ -321,7 +374,6 @@ class Map:
             font = pygame.font.Font(None, 16)
             name_text = font.render(container.name, True, WHITE)
             screen.blit(name_text, (container.x * TILE_SIZE, container.y * TILE_SIZE - 15))
-
             # --- МАРКЕР СТОРОНЫ ДОСТУПА ---
             if container.access_side != "all":
                 cx, cy = rect.centerx, rect.centery
@@ -339,7 +391,7 @@ class Map:
                 if marker_pos:
                     pygame.draw.circle(screen, WHITE, marker_pos, radius)
                     pygame.draw.circle(screen, BLACK, marker_pos, radius, 1)
-
+        
         # 4. Отрисовка дропов (предметов на земле)
         for drop in self.drops:
             if drop.is_empty:
@@ -352,121 +404,97 @@ class Map:
             font = pygame.font.Font(None, 14)
             count_text = font.render(str(len(drop.items)), True, BLACK)
             screen.blit(count_text, (drop.x * TILE_SIZE + 18, drop.y * TILE_SIZE + 15))
-
-
-        # Отрисовка кошек
-        for cat in self.cats:
-            rect = pygame.Rect(cat.x * TILE_SIZE, cat.y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+        
+        # 5. Отрисовка животных
+        for animal in self.animals:
+            rect = pygame.Rect(animal.x * TILE_SIZE, animal.y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
             pygame.draw.rect(screen, (255, 180, 100), rect)
             pygame.draw.rect(screen, BLACK, rect, 2)
-
             # Три цифры потребностей (голод, энергия, скука)
             font = pygame.font.Font(None, 14)
             needs_text = font.render(
-                f"{cat.hunger} {cat.energy} {cat.boredom}",
+                f"{animal.hunger} {animal.energy} {animal.boredom}",
                 True, BLACK
             )
-            screen.blit(needs_text, (cat.x * TILE_SIZE + 2, cat.y * TILE_SIZE + 18))
-
-
-        # Отрисовка точек интереса кошек (для отладки)
-        for cat in self.cats:
+            screen.blit(needs_text, (animal.x * TILE_SIZE + 2, animal.y * TILE_SIZE + 18))
+        
+        # 6. Отрисовка точек интереса животных (для отладки)
+        for animal in self.animals:
             font = pygame.font.Font(None, 14)
+            food_pos = animal.points_of_interest.get("food")
+            home_pos = animal.points_of_interest.get("home")
+            toy_pos = animal.points_of_interest.get("toy")
             
-            if cat.food_pos:
-                fx, fy = cat.food_pos
+            if food_pos:
+                fx, fy = food_pos
                 rect = pygame.Rect(fx * TILE_SIZE, fy * TILE_SIZE, TILE_SIZE, TILE_SIZE)
                 pygame.draw.rect(screen, (100, 255, 100), rect, 2)  # зелёная рамка
                 label = font.render("еда", True, (100, 255, 100))
                 screen.blit(label, (fx * TILE_SIZE + 4, fy * TILE_SIZE + 4))
-            
-            if cat.bed_pos:
-                bx, by = cat.bed_pos
+            if home_pos:
+                bx, by = home_pos
                 rect = pygame.Rect(bx * TILE_SIZE, by * TILE_SIZE, TILE_SIZE, TILE_SIZE)
                 pygame.draw.rect(screen, (100, 100, 255), rect, 2)  # синяя рамка
                 label = font.render("сон", True, (100, 100, 255))
                 screen.blit(label, (bx * TILE_SIZE + 4, by * TILE_SIZE + 4))
-            
-            if cat.toy_pos:
-                tx, ty = cat.toy_pos
+            if toy_pos:
+                tx, ty = toy_pos
                 rect = pygame.Rect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE)
                 pygame.draw.rect(screen, (255, 255, 100), rect, 2)  # жёлтая рамка
                 label = font.render("игра", True, (255, 255, 100))
                 screen.blit(label, (tx * TILE_SIZE + 4, ty * TILE_SIZE + 4))
-
-
-        # 5. Отрисовка NPC (поверх всего)
+        
+        # 7. Отрисовка NPC (поверх всего)
         for npc in self.npcs:
-            rect = pygame.Rect(npc["x"] * TILE_SIZE, npc["y"] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+            rect = pygame.Rect(npc.x * TILE_SIZE, npc.y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
             pygame.draw.rect(screen, NPC_COLOR, rect)
             pygame.draw.rect(screen, BLACK, rect, 2)
             font = pygame.font.Font(None, 16)
-            name_text = font.render(npc["name"], True, WHITE)
-            screen.blit(name_text, (npc["x"] * TILE_SIZE, npc["y"] * TILE_SIZE - 15))
-
+            name_text = font.render(npc.name, True, WHITE)
+            screen.blit(name_text, (npc.x * TILE_SIZE, npc.y * TILE_SIZE - 15))
             # Линия направления для NPC
-            if npc.get("movement") != "stationary" and len(npc.get("patrol_points", [])) > 0:
-                patrol_points = npc["patrol_points"]
-                current_index = npc.get("patrol_index", 0)
+            if npc.movement != "stationary" and len(npc.patrol_points) > 0:
+                patrol_points = npc.patrol_points
+                current_index = npc.patrol_index
                 target = patrol_points[current_index]
-
                 if isinstance(target, dict):
-                    target_x, target_y = target.get("pos", [npc["x"], npc["y"]])
+                    target_x, target_y = target.get("pos", [npc.x, npc.y])
                 else:
                     target_x, target_y = target[0], target[1]
-
-                dx = target_x - npc["x"]
-                dy = target_y - npc["y"]
+                dx = target_x - npc.x
+                dy = target_y - npc.y
                 if dx != 0:
                     dx = 1 if dx > 0 else -1
                 if dy != 0:
                     dy = 1 if dy > 0 else -1
-
-                cx = npc["x"] * TILE_SIZE + TILE_SIZE // 2
-                cy = npc["y"] * TILE_SIZE + TILE_SIZE // 2
+                cx = npc.x * TILE_SIZE + TILE_SIZE // 2
+                cy = npc.y * TILE_SIZE + TILE_SIZE // 2
                 end_x = cx + dx * 20
                 end_y = cy + dy * 20
                 pygame.draw.line(screen, (255, 200, 0), (cx, cy), (end_x, end_y), 2)
-
+    
+    # -------------------------------------------------------------------------
+    # УПРАВЛЕНИЕ NPC
+    # -------------------------------------------------------------------------
+    
     def reset_npcs_near_door(self, door_x, door_y):
+        """Сбрасывает таймер движения для NPC рядом с дверью."""
         for npc in self.npcs:
-            if abs(npc["x"] - door_x) <= 1 and abs(npc["y"] - door_y) <= 1:
-                npc["last_move_time"] = 0
-
+            if abs(npc.x - door_x) <= 1 and abs(npc.y - door_y) <= 1:
+                npc.last_move_time = 0
+    
     def reset_all_npcs_timer(self):
+        """Сбрасывает таймер движения для всех NPC."""
         for npc in self.npcs:
-            npc["last_move_time"] = 0
-
-    def update_cats(self, current_time):
-        for cat in self.cats:
-            cat.update_needs(current_time)
-            cat.decide_action(self)
-            cat.move_towards_target(self, current_time)
-
-    def get_exit_at(self, x, y):
-        '''
-        обработка перехода между локациями
-        '''
-        for exit_data in self.exits:
-            if exit_data.get("x") == x and exit_data.get("y") == y:
-                return exit_data
-        return None
-
-    def get_container_at(self, x, y):
-        for container in self.containers:
-            if not container.is_destroyed and container.occupies(x, y):
-                return container
-        return None
-
-    def get_drop_at(self, x, y):
-        '''Возвращает кучу предметов в клетке (x, y) или None'''
-        for drop in self.drops:
-            if drop.x == x and drop.y == y and not drop.is_empty:
-                return drop
-        return None
-
-    def get_cat_at(self, x, y):
-        for cat in self.cats:
-            if cat.x == x and cat.y == y:
-                return cat
-        return None
+            npc.last_move_time = 0
+    
+    # -------------------------------------------------------------------------
+    # ОБНОВЛЕНИЕ ЖИВОТНЫХ
+    # -------------------------------------------------------------------------
+    
+    def update_animals(self, current_time):
+        """Обновляет состояние всех животных на карте."""
+        for animal in self.animals:
+            animal.update_needs(current_time)
+            animal.decide_action(self)
+            animal.move_towards_target(self, current_time)
