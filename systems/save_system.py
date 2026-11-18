@@ -10,7 +10,6 @@ import json
 import os
 import sys
 
-# Добавляем корневую папку проекта в пути поиска Python
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import log
 
@@ -18,30 +17,18 @@ from logger import log
 class SaveSystem:
     """
     Система сохранений игры.
-    Работает напрямую с движком (game_engine):
-       - берёт данные для сохранения из engine.game_state и engine.current_map
-       - при загрузке создаёт новую карту и присваивает её движку
+    Работает напрямую с движком (game_engine).
     """
     
     def __init__(self, game_engine):
-        """
-        Аргументы:
-            game_engine: Ссылка на GameEngine (источник game_state и current_map).
-        """
         self.engine = game_engine
-        self.last_save_name = None  # Имя последнего сохранения
+        self.last_save_name = None
         
-        # Папка saves/ рядом с main.py
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.saves_dir = os.path.join(base_dir, "saves")
         os.makedirs(self.saves_dir, exist_ok=True)
     
-    # -------------------------------------------------------------------------
-    # ВСПОМОГАТЕЛЬНЫЕ
-    # -------------------------------------------------------------------------
-    
     def get_save_filename(self, name):
-        """Возвращает полный путь к файлу сохранения по его имени."""
         return os.path.join(self.saves_dir, f"{name}.json")
     
     # -------------------------------------------------------------------------
@@ -54,15 +41,12 @@ class SaveSystem:
         current_map = self.engine.current_map
         log.info("СБОР ДАННЫХ: начинаю сбор")
         
-        # Данные игрока
-        player_data = {
-            "x": game_state.player["x"],
-            "y": game_state.player["y"],
-            "class": game_state.player["class"],
-            "inventory": game_state.inventory.get_items(),
-            "humanity": game_state.humanity,
-            "days_left": game_state.days_left,
-        }
+        # Данные игрока — через to_dict() объекта Player
+        player_data = game_state.player.to_dict()
+        # Добавляем инвентарь, человечность и дни (они пока не в Player)
+        player_data["inventory"] = game_state.inventory.get_items()
+        player_data["humanity"] = game_state.humanity
+        player_data["days_left"] = game_state.days_left
         log.info(f"СБОР: игрок на ({player_data['x']},{player_data['y']}), инвентарь: {player_data['inventory']}")
         
         # Данные локации
@@ -70,13 +54,13 @@ class SaveSystem:
             "location_id": current_map.location_id,
             "doors": dict(game_state.door_states),
             "npcs": [],
-            "animals": [],   # ← было "cats", теперь "animals"
+            "animals": [],
             "containers": [],
             "drops": [],
         }
         log.info(f"СБОР: двери: {location_data['doors']}")
         
-        # NPC — теперь обращаемся через атрибуты (npc.id, а не npc["id"])
+        # NPC
         for npc in current_map.npcs:
             location_data["npcs"].append({
                 "id": npc.id,
@@ -87,7 +71,7 @@ class SaveSystem:
             })
             log.info(f"СБОР: NPC {npc.id} на ({npc.x},{npc.y}), patrol_index={npc.patrol_index}")
         
-        # Животные — сохраняем объекты Animal (кошки, крысы и т.д.)
+        # Животные
         for animal in current_map.animals:
             location_data["animals"].append({
                 "id": animal.id,
@@ -142,7 +126,6 @@ class SaveSystem:
     # -------------------------------------------------------------------------
     
     def save(self, name):
-        """Сохраняет игру в файл <name>.json."""
         log.info(f"СОХРАНЕНИЕ: начинаю '{name}'")
         data = self.collect_data()
         filename = self.get_save_filename(name)
@@ -161,12 +144,6 @@ class SaveSystem:
     # -------------------------------------------------------------------------
     
     def load(self, name):
-        """
-        Загружает игру из файла <name>.json.
-        ВАЖНО: метод не просто читает данные, но и создаёт новую карту,
-        восстанавливает на ней NPC/животных/двери/контейнеры/дропы
-        и присваивает её движку.
-        """
         log.info(f"ЗАГРУЗКА: начинаю '{name}'")
         filename = self.get_save_filename(name)
         if not os.path.exists(filename):
@@ -183,20 +160,21 @@ class SaveSystem:
         game_state = self.engine.game_state
         location_data = data["location"]
         
-        # --- 1. СОЗДАЁМ НОВУЮ КАРТУ ИЗ СОХРАНЕНИЯ ---
+        # --- 1. СОЗДАЁМ НОВУЮ КАРТУ ---
         from world.map import Map
         new_map = Map(location_data["location_id"], game_state, self.engine.location_manager)
         log.info(f"ЗАГРУЗКА: создана карта {location_data['location_id']}")
         
-        # --- 2. ВОССТАНАВЛИВАЕМ ИГРОКА ---
-        player_data = data["player"]
-        game_state.player["x"] = player_data["x"]
-        game_state.player["y"] = player_data["y"]
-        game_state.player["class"] = player_data["class"]
-        game_state.humanity = player_data["humanity"]
-        game_state.days_left = player_data["days_left"]
-        game_state.inventory.items = player_data["inventory"].copy()
-        log.info(f"ЗАГРУЗКА: игрок на ({player_data['x']},{player_data['y']}), инвентарь={player_data['inventory']}")
+        # --- 2. ВОССТАНАВЛИВАЕМ ИГРОКА через from_dict() ---
+        from entities.player import Player
+        game_state.player = Player.from_dict(data["player"])
+        game_state.humanity = data["player"].get("humanity", 50)
+        game_state.days_left = data["player"].get("days_left", 14)
+        game_state.inventory.items = data["player"].get("inventory", []).copy()
+        # Синхронизируем лимит веса инвентаря с классом игрока
+        game_state.inventory.max_weight = game_state.player.max_weight
+        log.info(f"ЗАГРУЗКА: игрок на ({game_state.player.x},{game_state.player.y}), "
+                 f"класс={game_state.player.player_class}, инвентарь={game_state.inventory.items}")
         
         # --- 3. ВОССТАНАВЛИВАЕМ ДВЕРИ ---
         game_state.door_states = dict(location_data["doors"])
@@ -208,21 +186,19 @@ class SaveSystem:
                     new_map.tiles[y][x] = tile_type
         log.info(f"ЗАГРУЗКА: двери восстановлены: {location_data['doors']}")
         
-        # --- 4. ВОССТАНАВЛИВАЕМ NPC (через атрибуты) ---
+        # --- 4. ВОССТАНАВЛИВАЕМ NPC ---
         for npc_save in location_data["npcs"]:
             for npc in new_map.npcs:
                 if npc.id == npc_save["id"]:
                     npc.x = npc_save["x"]
                     npc.y = npc_save["y"]
                     npc.patrol_index = npc_save["patrol_index"]
-                    # Преобразуем списки координат обратно в кортежи
                     npc.path = [tuple(p) for p in npc_save["path"]]
                     npc.wait_until = 0
-                    log.info(f"ЗАГРУЗКА: NPC {npc.id} восстановлен на ({npc.x},{npc.y}), patrol_index={npc.patrol_index}")
+                    log.info(f"ЗАГРУЗКА: NPC {npc.id} восстановлен на ({npc.x},{npc.y})")
                     break
         
         # --- 5. ВОССТАНАВЛИВАЕМ ЖИВОТНЫХ ---
-        # Полностью пересоздаём список animals из сохранения
         new_map.animals.clear()
         from entities.animal import Animal
         for animal_save in location_data.get("animals", []):
@@ -241,7 +217,6 @@ class SaveSystem:
             animal.fear = animal_save.get("fear", 0)
             animal.aggression = animal_save.get("aggression", 0)
             animal.points_of_interest = animal_save.get("points_of_interest", {})
-            # Преобразуем кортежи точек интереса обратно из списков (JSON сериализует кортежи в списки)
             for key in animal.points_of_interest:
                 val = animal.points_of_interest[key]
                 if isinstance(val, list):
@@ -264,8 +239,7 @@ class SaveSystem:
                     container.access_side = cont_save.get("access_side", "all")
                     container.width = cont_save.get("width", 1)
                     container.height = cont_save.get("height", 1)
-                    log.info(f"ЗАГРУЗКА: контейнер {container.id} восстановлен, "
-                             f"открыт={container.is_open}, сторона={container.access_side}")
+                    log.info(f"ЗАГРУЗКА: контейнер {container.id} восстановлен")
                     break
         
         # --- 7. ВОССТАНАВЛИВАЕМ ДРОПЫ ---
@@ -279,12 +253,12 @@ class SaveSystem:
                 items=drop_save["items"].copy()
             )
             new_map.drops.append(new_drop)
-            log.info(f"ЗАГРУЗКА: дроп {new_drop.id} восстановлен на ({new_drop.x},{new_drop.y}), предметы={new_drop.items}")
+            log.info(f"ЗАГРУЗКА: дроп {new_drop.id} восстановлен на ({new_drop.x},{new_drop.y})")
         
         # --- 8. ПРИСВАИВАЕМ КАРТУ ДВИЖКУ ---
         self.engine.current_map = new_map
         
-        # --- 9. ПЕРЕСОЗДАЁМ DIALOG_SYSTEM ПОД НОВУЮ ЛОКАЦИЮ ---
+        # --- 9. ПЕРЕСОЗДАЁМ DIALOG_SYSTEM ---
         dialogs_path = os.path.join(
             self.engine.location_manager.get_location_path(location_data["location_id"]),
             "dialogs"
@@ -293,37 +267,28 @@ class SaveSystem:
         self.engine.dialog_system = DialogSystem(game_state, dialogs_path)
         log.info(f"ЗАГРУЗКА: dialog_system пересоздан под {location_data['location_id']}")
         
-        # --- 10. СБРАСЫВАЕМ ОЧЕРЕДЬ ДВИЖЕНИЯ ---
+        # --- 10. СБРАСЫВАЕМ СОСТОЯНИЯ ---
         self.engine.move_queue = []
-        self.engine.player_target = None
-        
-        # --- 11. СБРАСЫВАЕМ in-session состояния локаций (чтобы не тащить старые) ---
+        self.engine.player_target = []
         self.engine.location_manager.location_states = {}
         
         log.info(f"ЗАГРУЗКА: успешно завершено")
         return True
     
-    # -------------------------------------------------------------------------
-    # ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
-    # -------------------------------------------------------------------------
-    
     def load_last(self):
-        """Загружает последнее сохранение (по имени из last_save_name)."""
         if not self.last_save_name:
-            log.info("ЗАГРУЗКА: нет last_save_name (ничего не сохранялось)")
+            log.info("ЗАГРУЗКА: нет last_save_name")
             return False
         return self.load(self.last_save_name)
     
     def list_saves(self):
-        """Возвращает список имён файлов сохранений (без .json), отсортированный."""
         if not os.path.isdir(self.saves_dir):
             return []
         files = [f for f in os.listdir(self.saves_dir) if f.endswith(".json")]
         return sorted([f[:-5] for f in files])
     
     def next_save_name(self):
-        """Генерирует следующий свободный автономер для сохранения."""
-        base = f"Идальго"
+        base = self.engine.game_state.player.player_class or "Идальго"
         loc = self.engine.current_map.location_id
         existing = self.list_saves()
         n = 1

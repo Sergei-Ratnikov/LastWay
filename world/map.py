@@ -17,6 +17,7 @@ from logger import log
 from entities.npc import NPC
 from entities.animal import Animal
 
+
 class Map:
     def __init__(self, location_id, game_state, location_manager=None):
         self.location_id = location_id
@@ -178,7 +179,7 @@ class Map:
             if not self.tile_data.is_walkable(tile):
                 return False
         # Нельзя проходить сквозь игрока
-        if self.game_state.player["x"] == x and self.game_state.player["y"] == y:
+        if self.game_state.player.x == x and self.game_state.player.y == y:
             return False
         # Нельзя проходить сквозь других NPC
         for npc in self.npcs:
@@ -221,7 +222,7 @@ class Map:
         # Животное не может проходить сквозь NPC и игрока
         if self.get_npc_at(x, y) is not None:
             return False
-        if self.game_state.player["x"] == x and self.game_state.player["y"] == y:
+        if self.game_state.player.x == x and self.game_state.player.y == y:
             return False
         # Дропы и контейнеры НЕ блокируют животное
         return True
@@ -244,7 +245,7 @@ class Map:
         return None
     
     def open_door(self, x, y):
-        if x == self.game_state.player["x"] and y == self.game_state.player["y"]:
+        if x == self.game_state.player.x and y == self.game_state.player.y:
             log.warning("Нельзя открыть дверь там, где стоит игрок")
             return False
         if not self.is_door(x, y):

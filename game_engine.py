@@ -16,6 +16,7 @@ from world.location_manager import LocationManager
 from input_handler import InputHandler
 from logger import log
 
+
 class GameEngine:
     """Главный игровой движок. Управляет циклом, событиями, обновлением и отрисовкой."""
     
@@ -42,13 +43,21 @@ class GameEngine:
         )
         self.dialog_system = DialogSystem(self.game_state, dialogs_path)
         
-        # Позиция игрока
+        # Позиция игрока — теперь через атрибуты объекта Player
         player_x, player_y = self.current_map.player_start
-        self.game_state.player["x"] = player_x
-        self.game_state.player["y"] = player_y
+        self.game_state.player.x = player_x
+        self.game_state.player.y = player_y
         
-        if not self.game_state.player["class"]:
-            self.game_state.player["class"] = "Идальго"
+        # Если класс не установлен — ставим Идальго по умолчанию
+        if not self.game_state.player.player_class:
+            self.game_state.player.player_class = "Идальго"
+            # Пересчитываем max_weight
+            self.game_state.player.max_weight = self.game_state.player.CLASS_MAX_WEIGHT.get(
+                self.game_state.player.player_class, 50.0
+            )
+        
+        # Синхронизируем лимит веса инвентаря с классом игрока
+        self.game_state.inventory.max_weight = self.game_state.player.max_weight
         
         self.move_queue = []
         self.player_target = None
@@ -58,15 +67,6 @@ class GameEngine:
         self.facing_direction = (0, 1)
         self.running = True
         self.exit_code = None
-        
-        # Лимит веса по классу
-        # TODO: Перенести потом в описание класса!!!
-        if self.game_state.player["class"] == "Геркулес":
-            self.game_state.inventory.max_weight = 80.0
-        elif self.game_state.player["class"] == "Идальго":
-            self.game_state.inventory.max_weight = 50.0
-        elif self.game_state.player["class"] == "Аббатисса":
-            self.game_state.inventory.max_weight = 30.0
         
         self.inventory_open = False
         
@@ -81,10 +81,6 @@ class GameEngine:
         
         # Отработка логики подходить к объекту по клику
         self.pending_interaction = None  # (x, y) — куда взаимодействовать после прихода
-        self.pending_target_cell = None  # (x, y) — куда идти
-        
-        # Отработка логики догонять NPC для взаимодействия
-        self.pending_interaction = None  # (x, y) — куда взаимодействовать
         self.pending_target_cell = None  # (x, y) — куда идти
         self.pending_npc_id = None       # ID NPC, если догоняем движущегося
     
@@ -135,11 +131,10 @@ class GameEngine:
                             name = self.save_menu_items[self.save_menu_selected]
                             if self.save_system.load(name):
                                 self.current_map.reset_all_npcs_timer()
-                                # ▼▼▼ СБРОС ОТЛОЖЕННОГО ВЗАИМОДЕЙСТВИЯ ▼▼▼
+                                # Сброс отложенного взаимодействия
                                 self.pending_interaction = None
                                 self.pending_target_cell = None
                                 self.pending_npc_id = None
-                                # ▲▲▲
                                 self._show_message(f"Загружено: {name}")
                             self.save_menu_open = False
                     continue
@@ -184,8 +179,8 @@ class GameEngine:
                 
                 from world.pathfinding import find_path
                 path = find_path(
-                    self.game_state.player["x"],
-                    self.game_state.player["y"],
+                    self.game_state.player.x,
+                    self.game_state.player.y,
                     approach[0], approach[1],
                     self.current_map.is_walkable
                 )
@@ -202,8 +197,8 @@ class GameEngine:
                     return
                 self.player_target = (target_x, target_y)
                 path = find_path(
-                    self.game_state.player["x"],
-                    self.game_state.player["y"],
+                    self.game_state.player.x,
+                    self.game_state.player.y,
                     target_x, target_y,
                     self.current_map.is_walkable
                 )
@@ -234,8 +229,8 @@ class GameEngine:
                 self.save_menu_selected = 0
     
     def _interact(self):
-        nx = self.game_state.player["x"] + self.facing_direction[0]
-        ny = self.game_state.player["y"] + self.facing_direction[1]
+        nx = self.game_state.player.x + self.facing_direction[0]
+        ny = self.game_state.player.y + self.facing_direction[1]
         if not self._is_in_range(nx, ny):
             self._show_message("Слишком далеко")
             return
@@ -256,7 +251,7 @@ class GameEngine:
         container = self.current_map.get_container_at(x, y)
         if container:
             # Проверка стороны доступа
-            if not container.can_interact_from(self.game_state.player["x"], self.game_state.player["y"]):
+            if not container.can_interact_from(self.game_state.player.x, self.game_state.player.y):
                 self._show_message("С этой стороны не подобраться")
                 log.info(f"КОНТЕЙНЕР: {container.id} — неверная сторона доступа")
                 return
@@ -329,7 +324,7 @@ class GameEngine:
     def _is_in_range(self, target_x, target_y, radius=None):
         if radius is None:
             radius = INTERACT_RADIUS
-        px, py = self.game_state.player["x"], self.game_state.player["y"]
+        px, py = self.game_state.player.x, self.game_state.player.y
         return abs(px - target_x) + abs(py - target_y) <= radius
     
     # -------------------------------------------------------------------------
@@ -365,18 +360,16 @@ class GameEngine:
                 self.pending_npc_id = None
             
             if (dx != 0 or dy != 0) and current_time - self.last_move_time >= MOVE_DELAY_MS:
-                nx = self.game_state.player["x"] + dx
-                ny = self.game_state.player["y"] + dy
+                nx = self.game_state.player.x + dx
+                ny = self.game_state.player.y + dy
                 if self.current_map.is_walkable(nx, ny):
-                    self.game_state.player["x"] = nx
-                    self.game_state.player["y"] = ny
+                    self.game_state.player.x = nx
+                    self.game_state.player.y = ny
                     self.last_move_time = current_time
         
         # Проверяем отложенное взаимодействие
-        # (подойти к объекту по клику)
-        # Обработка отложенного взаимодействия
         if self.pending_interaction:
-            px, py = self.game_state.player["x"], self.game_state.player["y"]
+            px, py = self.game_state.player.x, self.game_state.player.y
             
             # Если цель — движущийся NPC, обновляем её позицию
             if self.pending_npc_id:
@@ -403,7 +396,7 @@ class GameEngine:
                 self.pending_target_cell = None
                 self.pending_npc_id = None
             elif not self.move_queue:
-                # Путь кончился, но мы не в радиусе — перестраиваем путь (NPC мог сдвинуться)
+                # Путь кончился, но мы не в радиусе — перестраиваем путь
                 approach = self._find_approach_cell(tx, ty)
                 if approach:
                     from world.pathfinding import find_path
@@ -423,7 +416,7 @@ class GameEngine:
         
         # Переход между локациями
         exit_point = self.current_map.get_exit_at(
-            self.game_state.player["x"], self.game_state.player["y"]
+            self.game_state.player.x, self.game_state.player.y
         )
         if exit_point:
             self.switch_location(exit_point["target_location"], exit_point["target_exit_id"])
@@ -582,18 +575,17 @@ class GameEngine:
         # --- 4. СТАВИМ ИГРОКА НА ТОЧКУ ВЫХОДА ---
         for exit_data in self.current_map.exits:
             if exit_data.get("id") == target_exit_id:
-                self.game_state.player["x"] = exit_data["spawn_x"]
-                self.game_state.player["y"] = exit_data["spawn_y"]
+                self.game_state.player.x = exit_data["spawn_x"]
+                self.game_state.player.y = exit_data["spawn_y"]
                 break
         
         self.last_move_time = pygame.time.get_ticks()
         self.move_queue = []
         
-        # ▼▼▼ СБРОС ОТЛОЖЕННОГО ВЗАИМОДЕЙСТВИЯ ▼▼▼
+        # Сброс отложенного взаимодействия
         self.pending_interaction = None
         self.pending_target_cell = None
         self.pending_npc_id = None
-        # ▲▲▲
     
     # -------------------------------------------------------------------------
     # ОТРИСОВКА
@@ -604,7 +596,7 @@ class GameEngine:
         self.current_map.render(self.screen, 0, 0)
         
         # Игрок
-        px, py = self.game_state.player["x"], self.game_state.player["y"]
+        px, py = self.game_state.player.x, self.game_state.player.y
         pygame.draw.rect(self.screen, GREEN, (px*TILE_SIZE, py*TILE_SIZE, TILE_SIZE, TILE_SIZE))
         cx = px*TILE_SIZE + TILE_SIZE//2
         cy = py*TILE_SIZE + TILE_SIZE//2
@@ -615,7 +607,7 @@ class GameEngine:
         # Верхняя панель
         font = pygame.font.Font(None, 24)
         info = font.render(
-            f"Класс: {self.game_state.player['class']}  |  Дней: {self.game_state.days_left}  |  Человечность: {self.game_state.humanity}",
+            f"Класс: {self.game_state.player.player_class}  |  Дней: {self.game_state.days_left}  |  Человечность: {self.game_state.humanity}",
             True, WHITE
         )
         self.screen.blit(info, (10, 10))
@@ -703,7 +695,6 @@ class GameEngine:
             title = title_font.render(title_text, True, YELLOW)
             self.screen.blit(title, (box.x + 20, box.y + 20))
             
-            # Список (для save показываем все существующие, для load — только их)
             y = box.y + 80
             if not self.save_menu_items:
                 empty = item_font.render("(нет сохранений)", True, (150, 150, 150))
@@ -715,7 +706,6 @@ class GameEngine:
                     text = item_font.render(marker + name, True, color)
                     self.screen.blit(text, (box.x + 20, y + i * 30))
             
-            # Подсказка
             if self.save_menu_mode == "save":
                 hint = "Enter — создать новое сохранение (автономер)"
             else:
@@ -758,8 +748,8 @@ class GameEngine:
             return
         
         next_x, next_y = path[0]
-        curr_x = self.game_state.player["x"] if is_player else entity.x
-        curr_y = self.game_state.player["y"] if is_player else entity.y
+        curr_x = self.game_state.player.x if is_player else entity.x
+        curr_y = self.game_state.player.y if is_player else entity.y
         
         # Двери
         tile_ahead = self.current_map.get_tile_type(next_x, next_y)
@@ -780,11 +770,9 @@ class GameEngine:
             return self.current_map.is_walkable_for_npc(tx, ty, entity)
         
         # --- ПРЕВЕНТИВНОЕ РАСХОЖДЕНИЕ ---
-        # Если мы NPC и следующая клетка занята другим NPC с меньшим ID — уступаем заранее.
         if not is_player:
             other_npc = self.current_map.get_npc_at(next_x, next_y)
             if other_npc and other_npc.id < entity.id:
-                # Уступаем только если тот NPC движется в нашу сторону (встречное движение)
                 if other_npc.path and other_npc.path[0] == (curr_x, curr_y):
                     log.info(f"ПРЕВЕНТИВ: {entity.name} уступает {other_npc.name}")
                     entity.wait_until = current_time + 400
@@ -868,8 +856,8 @@ class GameEngine:
         # Движение
         if check_walkable(next_x, next_y):
             if is_player:
-                self.game_state.player["x"] = next_x
-                self.game_state.player["y"] = next_y
+                self.game_state.player.x = next_x
+                self.game_state.player.y = next_y
                 if self.move_queue:
                     self.move_queue.pop(0)
                 self.last_move_time = current_time
@@ -898,7 +886,6 @@ class GameEngine:
         container = self.current_map.get_container_at(obj_x, obj_y)
         if container and container.access_side != "all":
             side = container.access_side
-            # Клетки-кандидаты в зависимости от стороны
             candidates = []
             if side == "north":
                 for dx in range(container.width):
@@ -913,19 +900,16 @@ class GameEngine:
                 for dy in range(container.height):
                     candidates.append((container.x + container.width, container.y + dy))
             
-            # Ищем первую проходимую
             for cx, cy in candidates:
                 if self.current_map.is_walkable(cx, cy):
                     return (cx, cy)
             return None
         
-        # Для всех остальных объектов (NPC, дропы, двери, всесторонние контейнеры)
-        # ищем ТОЛЬКО ортогональную соседнюю проходимую клетку
-        px, py = self.game_state.player["x"], self.game_state.player["y"]
+        px, py = self.game_state.player.x, self.game_state.player.y
         best = None
         best_dist = 9999
         
-        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:  # только 4 стороны
+        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
             cx, cy = obj_x + dx, obj_y + dy
             if self.current_map.is_walkable(cx, cy):
                 dist = abs(px - cx) + abs(py - cy)
