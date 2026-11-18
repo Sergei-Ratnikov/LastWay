@@ -1,11 +1,20 @@
-# entities/drop.py
-
+# objects/drop.py
+# =============================================================================
+# ДРОП (КУЧА ПРЕДМЕТОВ НА ЗЕМЛЕ)
+# Объект мира, представляющий кучу предметов на земле.
+# Может содержать один или несколько предметов.
+# =============================================================================
 
 class ItemDrop:
-    """Куча предметов на земле. Может содержать один или несколько предметов."""
-
+    """
+    Куча предметов на земле.
+    Может содержать один или несколько предметов.
+    """
+    
     def __init__(self, drop_id, x, y, items=None):
         """
+        Инициализация дропа.
+        
         Аргументы:
             drop_id (str): Уникальный идентификатор кучи.
             x, y (int): Координаты на карте.
@@ -15,23 +24,23 @@ class ItemDrop:
         self.x = x
         self.y = y
         self.items = items if items is not None else []
-
+    
     @property
     def is_empty(self):
         """Возвращает True, если в куче больше нет предметов."""
         return len(self.items) == 0
-
+    
     def take_item(self, item_id):
         """Забирает предмет из кучи. Возвращает предмет или None."""
         if item_id in self.items:
             self.items.remove(item_id)
             return item_id
         return None
-
+    
     def add_item(self, item_id):
         """Добавляет предмет в кучу."""
         self.items.append(item_id)
-
+    
     def get_items(self):
         """Возвращает копию списка предметов."""
         return self.items.copy()

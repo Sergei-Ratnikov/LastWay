@@ -85,7 +85,7 @@ class Map:
         # ЗАГРУЗКА КОНТЕЙНЕРОВ
         # -------------------------------------------------------------------------
         for container_data in data.get("containers", []):
-            from entities.container import Container
+            from objects.container import Container
             container = Container(
                 container_id=container_data.get("id"),
                 x=container_data.get("x"),
@@ -103,7 +103,7 @@ class Map:
         # ЗАГРУЗКА ДРОПОВ
         # -------------------------------------------------------------------------
         for drop_data in data.get("drops", []):
-            from entities.drop import ItemDrop
+            from objects.drop import ItemDrop
             drop = ItemDrop(
                 drop_id=drop_data.get("id"),
                 x=drop_data.get("x"),

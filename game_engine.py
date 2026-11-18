@@ -45,7 +45,7 @@ class GameEngine:
         )
         self.dialog_system = DialogSystem(self.game_state, dialogs_path)
         
-        # Позиция игрока — теперь через атрибуты объекта Player
+        # Позиция игрока — через атрибуты объекта Player
         player_x, player_y = self.current_map.player_start
         self.game_state.player.x = player_x
         self.game_state.player.y = player_y
@@ -53,7 +53,6 @@ class GameEngine:
         # Если класс не установлен — ставим Идальго по умолчанию
         if not self.game_state.player.player_class:
             self.game_state.player.player_class = "Идальго"
-            # Пересчитываем max_weight
             self.game_state.player.max_weight = self.game_state.player.CLASS_MAX_WEIGHT.get(
                 self.game_state.player.player_class, 50.0
             )
@@ -61,35 +60,36 @@ class GameEngine:
         # Синхронизируем лимит веса инвентаря с классом игрока
         self.game_state.inventory.max_weight = self.game_state.player.max_weight
         
+        # Состояние движения
         self.move_queue = []
         self.player_target = None
         self.stuck_counter = 0
-        self.input_handler = InputHandler()
         self.last_move_time = 0
         self.facing_direction = (0, 1)
+        
+        # Состояние игры
         self.running = True
         self.exit_code = None
-        
         self.inventory_open = False
         
-        # ВАЖНО: передаём self (а не game_state и current_map)
+        # Ввод
+        self.input_handler = InputHandler()
+        
+        # Сохранения
         from systems.save_system import SaveSystem
         self.save_system = SaveSystem(self)
-        
         self.save_menu_open = False
-        self.save_menu_mode = None  # "save" или "load"
+        self.save_menu_mode = None          # "save" или "load"
         self.save_menu_selected = 0
         self.save_menu_items = []
         
-        # Отработка логики подходить к объекту по клику
-        self.pending_interaction = None  # (x, y) — куда взаимодействовать после прихода
-        self.pending_target_cell = None  # (x, y) — куда идти
-        self.pending_npc_id = None       # ID NPC, если догоняем движущегося
-
-        # Инициализируем рендерер (отвечает за отрисовку UI)
+        # Отложенное взаимодействие (подход к объекту по клику)
+        self.pending_interaction = None     # (x, y) — куда взаимодействовать после прихода
+        self.pending_target_cell = None     # (x, y) — куда идти
+        self.pending_npc_id = None          # ID NPC, если догоняем движущегося
+        
+        # Системы
         self.renderer = Renderer(self)
-
-        # Инициализируем систему движения
         self.movement_system = MovementSystem(self)
 
     # -------------------------------------------------------------------------
@@ -366,7 +366,6 @@ class GameEngine:
     # -------------------------------------------------------------------------
     # ПЕРЕХОД МЕЖДУ ЛОКАЦИЯМИ
     # -------------------------------------------------------------------------
-    
     def switch_location(self, target_location_id, target_exit_id):
         # --- 1. СОХРАНЯЕМ СОСТОЯНИЕ ТЕКУЩЕЙ ЛОКАЦИИ ---
         current_location_id = self.current_map.location_id
@@ -446,7 +445,7 @@ class GameEngine:
                         break
             
             self.current_map.drops.clear()
-            from entities.drop import ItemDrop
+            from objects.drop import ItemDrop
             for drop_save in saved_state["drops"]:
                 self.current_map.drops.append(ItemDrop(
                     drop_id=drop_save["id"], x=drop_save["x"], y=drop_save["y"],
@@ -471,7 +470,6 @@ class GameEngine:
     # -------------------------------------------------------------------------
     # ОТРИСОВКА
     # -------------------------------------------------------------------------
-    
     def render(self):
         """Отрисовка кадра. Делегируется рендереру."""
         self.screen.fill(BLACK)

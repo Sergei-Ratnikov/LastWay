@@ -244,7 +244,7 @@ class SaveSystem:
         
         # --- 7. ВОССТАНАВЛИВАЕМ ДРОПЫ ---
         new_map.drops.clear()
-        from entities.drop import ItemDrop
+        from objects.drop import ItemDrop
         for drop_save in location_data["drops"]:
             new_drop = ItemDrop(
                 drop_id=drop_save["id"],

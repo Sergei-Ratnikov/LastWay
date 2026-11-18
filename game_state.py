@@ -9,7 +9,7 @@
 # - время (оставшиеся дни, время суток)
 # =============================================================================
 
-from entities.inventory import Inventory
+from objects.inventory import Inventory
 from entities.player import Player
 
 
