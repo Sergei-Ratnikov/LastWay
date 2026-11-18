@@ -13,8 +13,10 @@ from game_state import GameState
 from world.map import Map
 from systems.dialog_system import DialogSystem
 from world.location_manager import LocationManager
+from ui.renderer import Renderer
 from input_handler import InputHandler
 from logger import log
+from systems.movement_system import MovementSystem
 
 
 class GameEngine:
@@ -83,7 +85,13 @@ class GameEngine:
         self.pending_interaction = None  # (x, y) — куда взаимодействовать после прихода
         self.pending_target_cell = None  # (x, y) — куда идти
         self.pending_npc_id = None       # ID NPC, если догоняем движущегося
-    
+
+        # Инициализируем рендерер (отвечает за отрисовку UI)
+        self.renderer = Renderer(self)
+
+        # Инициализируем систему движения
+        self.movement_system = MovementSystem(self)
+
     # -------------------------------------------------------------------------
     # ОСНОВНОЙ ЦИКЛ
     # -------------------------------------------------------------------------
@@ -172,7 +180,7 @@ class GameEngine:
                     self.pending_interaction = (target_x, target_y)
                 
                 # Строим путь к текущей позиции цели
-                approach = self._find_approach_cell(self.pending_interaction[0], self.pending_interaction[1])
+                approach = self.movement_system.find_approach_cell(self.pending_interaction[0], self.pending_interaction[1])
                 if not approach:
                     self._show_message("Не подойти к объекту")
                     return
@@ -326,93 +334,19 @@ class GameEngine:
             radius = INTERACT_RADIUS
         px, py = self.game_state.player.x, self.game_state.player.y
         return abs(px - target_x) + abs(py - target_y) <= radius
-    
+
     # -------------------------------------------------------------------------
     # ОБНОВЛЕНИЕ
     # -------------------------------------------------------------------------
-    
     def update(self, current_time: int):
-        if self.game_state.dialog_active:
-            return
-        if self.inventory_open:
-            return
-        if self.save_menu_open:
+        if self.game_state.dialog_active or self.inventory_open or self.save_menu_open:
             return
         
         # Движение игрока
-        if self.move_queue:
-            self._move_entity_step(self.game_state.player, is_player=True)
-        else:
-            keys = pygame.key.get_pressed()
-            dx = dy = 0
-            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-                dx = -1; self.facing_direction = (-1, 0)
-            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-                dx = 1; self.facing_direction = (1, 0)
-            if keys[pygame.K_UP] or keys[pygame.K_w]:
-                dy = -1; self.facing_direction = (0, -1)
-            if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-                dy = 1; self.facing_direction = (0, 1)
-            
-            if dx != 0 or dy != 0:
-                self.pending_interaction = None
-                self.pending_target_cell = None
-                self.pending_npc_id = None
-            
-            if (dx != 0 or dy != 0) and current_time - self.last_move_time >= MOVE_DELAY_MS:
-                nx = self.game_state.player.x + dx
-                ny = self.game_state.player.y + dy
-                if self.current_map.is_walkable(nx, ny):
-                    self.game_state.player.x = nx
-                    self.game_state.player.y = ny
-                    self.last_move_time = current_time
+        self.movement_system.update_player_movement(current_time)
         
-        # Проверяем отложенное взаимодействие
-        if self.pending_interaction:
-            px, py = self.game_state.player.x, self.game_state.player.y
-            
-            # Если цель — движущийся NPC, обновляем её позицию
-            if self.pending_npc_id:
-                npc = None
-                for other in self.current_map.npcs:
-                    if other.id == self.pending_npc_id:
-                        npc = other
-                        break
-                if npc:
-                    self.pending_interaction = (npc.x, npc.y)
-                else:
-                    # NPC исчез (например, умер) — сбрасываем
-                    self.pending_interaction = None
-                    self.pending_target_cell = None
-                    self.pending_npc_id = None
-            
-            tx, ty = self.pending_interaction
-            
-            # Если уже в радиусе — взаимодействуем
-            if self._is_in_range(tx, ty):
-                self._handle_interaction(tx, ty)
-                log.info(f"АВТО-ВЗАИМОДЕЙСТВИЕ: с ({tx},{ty})")
-                self.pending_interaction = None
-                self.pending_target_cell = None
-                self.pending_npc_id = None
-            elif not self.move_queue:
-                # Путь кончился, но мы не в радиусе — перестраиваем путь
-                approach = self._find_approach_cell(tx, ty)
-                if approach:
-                    from world.pathfinding import find_path
-                    new_path = find_path(px, py, approach[0], approach[1], self.current_map.is_walkable)
-                    if new_path:
-                        self.move_queue = new_path
-                        self.pending_target_cell = approach
-                        log.info(f"ПЕРЕСЧЁТ: новый подход к {approach}")
-                    else:
-                        self.pending_interaction = None
-                        self.pending_target_cell = None
-                        self.pending_npc_id = None
-                else:
-                    self.pending_interaction = None
-                    self.pending_target_cell = None
-                    self.pending_npc_id = None
+        # Отложенное взаимодействие
+        self.movement_system.update_pending_interaction()
         
         # Переход между локациями
         exit_point = self.current_map.get_exit_at(
@@ -424,64 +358,11 @@ class GameEngine:
         
         # Движение NPC
         for npc in self.current_map.npcs:
-            if npc.movement == "stationary":
-                continue
-            if npc.wait_until > current_time:
-                continue
-            
-            # Следование за другим NPC
-            if npc.movement == "follow" and npc.follow_target:
-                target_npc = None
-                for other in self.current_map.npcs:
-                    if other.id == npc.follow_target:
-                        target_npc = other
-                        break
-                if target_npc:
-                    if abs(npc.x - target_npc.x) + abs(npc.y - target_npc.y) <= 1:
-                        npc.path = []
-                        npc.last_move_time = current_time
-                        continue
-                    if not npc.path:
-                        from world.pathfinding import find_path
-                        path = find_path(npc.x, npc.y, target_npc.x, target_npc.y, self.current_map.is_walkable_static)
-                        if path:
-                            npc.path = path
-                        else:
-                            npc.last_move_time = current_time
-                    self._move_entity_step(npc, is_player=False)
-                    continue
-            
-            # Патрулирование
-            if npc.patrol_points:
-                target = npc.patrol_points[npc.patrol_index]
-                if isinstance(target, list):
-                    tx, ty = target[0], target[1]
-                else:
-                    tx, ty = target[0], target[1]
-                
-                if (npc.x, npc.y) == (tx, ty):
-                    npc.patrol_index = (npc.patrol_index + 1) % len(npc.patrol_points)
-                    npc.last_move_time = current_time
-                    continue
-            
-            if not npc.path and npc.patrol_points:
-                if npc.wait_until > current_time:
-                    continue
-                target = npc.patrol_points[npc.patrol_index]
-                if isinstance(target, list):
-                    tx, ty = target[0], target[1]
-                else:
-                    tx, ty = target[0], target[1]
-                from world.pathfinding import find_path
-                path = find_path(npc.x, npc.y, tx, ty, self.current_map.is_walkable_static)
-                if path:
-                    npc.path = path
-            
-            self._move_entity_step(npc, is_player=False)
+            self.movement_system.update_npc_movement(npc, current_time)
         
         # Животные
         self.current_map.update_animals(current_time)
-    
+
     # -------------------------------------------------------------------------
     # ПЕРЕХОД МЕЖДУ ЛОКАЦИЯМИ
     # -------------------------------------------------------------------------
@@ -592,328 +473,12 @@ class GameEngine:
     # -------------------------------------------------------------------------
     
     def render(self):
+        """Отрисовка кадра. Делегируется рендереру."""
         self.screen.fill(BLACK)
         self.current_map.render(self.screen, 0, 0)
-        
-        # Игрок
-        px, py = self.game_state.player.x, self.game_state.player.y
-        pygame.draw.rect(self.screen, GREEN, (px*TILE_SIZE, py*TILE_SIZE, TILE_SIZE, TILE_SIZE))
-        cx = px*TILE_SIZE + TILE_SIZE//2
-        cy = py*TILE_SIZE + TILE_SIZE//2
-        ex = cx + self.facing_direction[0]*20
-        ey = cy + self.facing_direction[1]*20
-        pygame.draw.line(self.screen, YELLOW, (cx, cy), (ex, ey), 3)
-        
-        # Верхняя панель
-        font = pygame.font.Font(None, 24)
-        info = font.render(
-            f"Класс: {self.game_state.player.player_class}  |  Дней: {self.game_state.days_left}  |  Человечность: {self.game_state.humanity}",
-            True, WHITE
-        )
-        self.screen.blit(info, (10, 10))
-        
-        if not self.game_state.dialog_active:
-            help_text = font.render("E — открыть дверь / говорить с NPC", True, WHITE)
-        else:
-            help_text = font.render("E/ESC — закрыть диалог", True, WHITE)
-        self.screen.blit(help_text, (10, 40))
-        
-        # Диалог
-        if self.game_state.dialog_active:
-            surf = pygame.Surface((WIDTH - 100, 160))
-            surf.set_alpha(220)
-            surf.fill(BLACK)
-            self.screen.blit(surf, (50, HEIGHT - 210))
-            pygame.draw.rect(self.screen, WHITE, (50, HEIGHT - 210, WIDTH - 100, 160), 2)
-            
-            for i, line in enumerate(self.game_state.dialog_text.split('\n')):
-                if i * 25 < 100:
-                    self.screen.blit(font.render(line[:65], True, WHITE), (55, HEIGHT - 200 + i * 25))
-            
-            for i, opt in enumerate(self.game_state.dialog_options):
-                self.screen.blit(font.render(f"{i+1}. {opt['text']}", True, GREEN), (55, HEIGHT - 110 + i * 25))
-            
-            if not self.game_state.dialog_options:
-                hint = font.render("Нажми E или ESC, чтобы продолжить", True, (150, 150, 150))
-                self.screen.blit(hint, (55, HEIGHT - 85))
-        
-        # Инвентарь
-        if self.inventory_open:
-            surf = pygame.Surface((WIDTH - 200, HEIGHT - 200))
-            surf.set_alpha(230)
-            surf.fill(BLACK)
-            self.screen.blit(surf, (100, 100))
-            pygame.draw.rect(self.screen, WHITE, (100, 100, WIDTH - 200, HEIGHT - 200), 3)
-            
-            title_font = pygame.font.Font(None, 36)
-            self.screen.blit(title_font.render("Инвентарь", True, YELLOW), (120, 120))
-            
-            item_font = pygame.font.Font(None, 24)
-            items = self.game_state.inventory.get_items()
-            
-            if not items:
-                self.screen.blit(item_font.render("(пусто)", True, (150, 150, 150)), (120, 170))
-            else:
-                for i, item_id in enumerate(items):
-                    if i >= 15:
-                        break
-                    self.screen.blit(item_font.render(f"{i+1}. {item_id}", True, WHITE), (120, 170 + i*30))
-            
-            self.screen.blit(item_font.render("Нажми I, чтобы закрыть", True, (150, 150, 150)), (120, HEIGHT - 130))
-        
-        # Временное сообщение
-        if self.temp_message:
-            if pygame.time.get_ticks() - self.temp_message_timer < 2000:
-                font = pygame.font.Font(None, 28)
-                text_surf = font.render(self.temp_message, True, WHITE)
-                text_rect = text_surf.get_rect(center=(WIDTH // 2, HEIGHT - 100))
-                bg_rect = text_rect.inflate(20, 10)
-                pygame.draw.rect(self.screen, BLACK, bg_rect)
-                pygame.draw.rect(self.screen, WHITE, bg_rect, 2)
-                self.screen.blit(text_surf, text_rect)
-            else:
-                self.temp_message = None
-        
-        # Меню сохранений
-        if self.save_menu_open:
-            # Затенение
-            surf = pygame.Surface((WIDTH, HEIGHT))
-            surf.set_alpha(180)
-            surf.fill(BLACK)
-            self.screen.blit(surf, (0, 0))
-            
-            # Окно
-            box = pygame.Rect(WIDTH // 2 - 250, 100, 500, 450)
-            pygame.draw.rect(self.screen, BLACK, box)
-            pygame.draw.rect(self.screen, WHITE, box, 3)
-            
-            title_font = pygame.font.Font(None, 36)
-            item_font = pygame.font.Font(None, 26)
-            hint_font = pygame.font.Font(None, 20)
-            
-            title_text = "Сохранить игру" if self.save_menu_mode == "save" else "Загрузить игру"
-            title = title_font.render(title_text, True, YELLOW)
-            self.screen.blit(title, (box.x + 20, box.y + 20))
-            
-            y = box.y + 80
-            if not self.save_menu_items:
-                empty = item_font.render("(нет сохранений)", True, (150, 150, 150))
-                self.screen.blit(empty, (box.x + 20, y))
-            else:
-                for i, name in enumerate(self.save_menu_items):
-                    color = GREEN if i == self.save_menu_selected else WHITE
-                    marker = "> " if i == self.save_menu_selected else "  "
-                    text = item_font.render(marker + name, True, color)
-                    self.screen.blit(text, (box.x + 20, y + i * 30))
-            
-            if self.save_menu_mode == "save":
-                hint = "Enter — создать новое сохранение (автономер)"
-            else:
-                hint = "Enter — загрузить выбранное"
-            
-            hint_text = hint_font.render(hint, True, (180, 180, 180))
-            self.screen.blit(hint_text, (box.x + 20, box.y + box.height - 60))
-            
-            esc_text = hint_font.render("ESC — закрыть", True, (180, 180, 180))
-            self.screen.blit(esc_text, (box.x + 20, box.y + box.height - 30))
-        
-        # Памятка
-        help_font = pygame.font.Font(None, 20)
-        hint = help_font.render(
-            "WASD/стрелки — движение | E — взаимодействие | I — инвентарь | F5 — сохранить | F9 — загрузить | ESC — меню",
-            True, (180, 180, 180)
-        )
-        self.screen.blit(hint, hint.get_rect(center=(WIDTH // 2, HEIGHT - 15)))
-    
+        self.renderer.render(self.screen)
+
     def _show_message(self, text):
         self.temp_message = text
         self.temp_message_timer = pygame.time.get_ticks()
     
-    # -------------------------------------------------------------------------
-    # ШАГ СУЩНОСТИ (игрок или NPC)
-    # -------------------------------------------------------------------------
-    
-    def _move_entity_step(self, entity, is_player=False):
-        current_time = pygame.time.get_ticks()
-        delay = MOVE_DELAY_MS if is_player else entity.move_delay_ms
-        last_move = self.last_move_time if is_player else entity.last_move_time
-        
-        if current_time - last_move < delay:
-            return
-        if not is_player and entity.wait_until > current_time:
-            return
-        
-        path = self.move_queue if is_player else entity.path
-        if not path:
-            return
-        
-        next_x, next_y = path[0]
-        curr_x = self.game_state.player.x if is_player else entity.x
-        curr_y = self.game_state.player.y if is_player else entity.y
-        
-        # Двери
-        tile_ahead = self.current_map.get_tile_type(next_x, next_y)
-        if tile_ahead in (5, 6, 7, 8, 9):
-            if self.current_map.open_door(next_x, next_y):
-                self.current_map.reset_npcs_near_door(next_x, next_y)
-                if not is_player:
-                    entity.last_door_pos = (next_x, next_y)
-                if is_player:
-                    self.last_move_time = current_time
-                else:
-                    entity.last_move_time = current_time
-                return
-        
-        def check_walkable(tx, ty):
-            if is_player:
-                return self.current_map.is_walkable(tx, ty)
-            return self.current_map.is_walkable_for_npc(tx, ty, entity)
-        
-        # --- ПРЕВЕНТИВНОЕ РАСХОЖДЕНИЕ ---
-        if not is_player:
-            other_npc = self.current_map.get_npc_at(next_x, next_y)
-            if other_npc and other_npc.id < entity.id:
-                if other_npc.path and other_npc.path[0] == (curr_x, curr_y):
-                    log.info(f"ПРЕВЕНТИВ: {entity.name} уступает {other_npc.name}")
-                    entity.wait_until = current_time + 400
-                    return
-        
-        blocked = not check_walkable(next_x, next_y)
-        
-        # Встречное движение
-        if not is_player and blocked:
-            other_npc = self.current_map.get_npc_at(next_x, next_y)
-            if other_npc and other_npc.path and other_npc.path[0] == (curr_x, curr_y):
-                if entity.id > other_npc.id:
-                    log.info(f"ВСТРЕЧА: {entity.name} уступает {other_npc.name}")
-                    entity.wait_until = current_time + 500
-                    return
-        
-        if blocked:
-            log.info(f"БЛОК: {entity.name if not is_player else 'Игрок'} на ({curr_x},{curr_y})")
-            
-            if is_player:
-                self.stuck_counter += 1
-            else:
-                entity.stuck_counter += 1
-            
-            current_stuck = self.stuck_counter if is_player else entity.stuck_counter
-            
-            if current_stuck > 2:
-                log.info(f"ТУПИК: {entity.name if not is_player else 'Игрок'}")
-                if is_player:
-                    self.move_queue = []
-                    self.player_target = None
-                    self.stuck_counter = 0
-                else:
-                    entity.path = []
-                    entity.wait_until = current_time + 500
-                    entity.stuck_counter = 0
-                return
-            
-            dx = next_x - curr_x
-            dy = next_y - curr_y
-            
-            right_x, right_y = curr_x - dy, curr_y + dx
-            left_x, left_y = curr_x + dy, curr_y - dx
-            back_x, back_y = curr_x - dx, curr_y - dy
-            
-            if check_walkable(right_x, right_y):
-                next_x, next_y = right_x, right_y
-                log.info(f"ОБХОД: {entity.name if not is_player else 'Игрок'} ВПРАВО")
-            elif check_walkable(left_x, left_y):
-                next_x, next_y = left_x, left_y
-                log.info(f"ОБХОД: {entity.name if not is_player else 'Игрок'} ВЛЕВО")
-            elif check_walkable(back_x, back_y):
-                next_x, next_y = back_x, back_y
-                log.info(f"ОБХОД: {entity.name if not is_player else 'Игрок'} НАЗАД")
-            else:
-                log.info(f"ТУПИК: {entity.name if not is_player else 'Игрок'} не может обойти")
-                if is_player:
-                    self.move_queue = []
-                    self.player_target = None
-                    self.stuck_counter = 0
-                else:
-                    entity.path = []
-                    entity.wait_until = current_time + 500
-                    entity.stuck_counter = 0
-                return
-            
-            if is_player:
-                self.move_queue = []
-                if self.player_target:
-                    from world.pathfinding import find_path
-                    new_path = find_path(next_x, next_y, self.player_target[0], self.player_target[1], self.current_map.is_walkable)
-                    if new_path:
-                        self.move_queue = new_path
-                    else:
-                        self.player_target = None
-                        self.stuck_counter = 0
-            else:
-                entity.path = []
-                entity.last_move_time = current_time
-        
-        # Движение
-        if check_walkable(next_x, next_y):
-            if is_player:
-                self.game_state.player.x = next_x
-                self.game_state.player.y = next_y
-                if self.move_queue:
-                    self.move_queue.pop(0)
-                self.last_move_time = current_time
-                self.stuck_counter = 0
-            else:
-                log.info(f"ШАГ: NPC {entity.name} ({entity.x},{entity.y}) -> ({next_x},{next_y})")
-                entity.x = next_x
-                entity.y = next_y
-                if path and (next_x, next_y) == path[0]:
-                    path.pop(0)
-                    entity.stuck_counter = 0
-                entity.last_move_time = current_time
-                if entity.last_door_pos:
-                    ldx, ldy = entity.last_door_pos
-                    if abs(entity.x - ldx) + abs(entity.y - ldy) >= 1:
-                        self.current_map.close_door(ldx, ldy)
-                        self.current_map.reset_npcs_near_door(ldx, ldy)
-                        entity.last_door_pos = None
-    
-    def _find_approach_cell(self, obj_x, obj_y):
-        """
-        Находит клетку, к которой нужно подойти для взаимодействия с объектом в (obj_x, obj_y).
-        Учитывает access_side у контейнеров.
-        Возвращает (x, y) или None, если подойти некуда.
-        """
-        container = self.current_map.get_container_at(obj_x, obj_y)
-        if container and container.access_side != "all":
-            side = container.access_side
-            candidates = []
-            if side == "north":
-                for dx in range(container.width):
-                    candidates.append((container.x + dx, container.y - 1))
-            elif side == "south":
-                for dx in range(container.width):
-                    candidates.append((container.x + dx, container.y + container.height))
-            elif side == "west":
-                for dy in range(container.height):
-                    candidates.append((container.x - 1, container.y + dy))
-            elif side == "east":
-                for dy in range(container.height):
-                    candidates.append((container.x + container.width, container.y + dy))
-            
-            for cx, cy in candidates:
-                if self.current_map.is_walkable(cx, cy):
-                    return (cx, cy)
-            return None
-        
-        px, py = self.game_state.player.x, self.game_state.player.y
-        best = None
-        best_dist = 9999
-        
-        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
-            cx, cy = obj_x + dx, obj_y + dy
-            if self.current_map.is_walkable(cx, cy):
-                dist = abs(px - cx) + abs(py - cy)
-                if dist < best_dist:
-                    best_dist = dist
-                    best = (cx, cy)
-        return best
