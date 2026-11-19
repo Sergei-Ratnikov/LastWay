@@ -33,14 +33,9 @@ BLUE = (0, 0, 255)
 NPC_COLOR = (0, 150, 200)          # Цвет прямоугольника NPC (сине-голубой)
 EXIT_COLOR = (0, 100, 0)           # Цвет выходов тёмно-зелёный
 
-# -----------------------------------------------------------------------------
-# ПУТИ К ПАПКАМ С ДАННЫМИ
-# -----------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))   # Корень проекта
 DATA_DIR = os.path.join(BASE_DIR, "data")               # Папка data
-MAPS_DIR = os.path.join(DATA_DIR, "maps")               # Карты
-NPCS_DIR = os.path.join(DATA_DIR, "npcs")               # Данные NPC
-DIALOGS_DIR = os.path.join(DATA_DIR, "dialogs")         # Диалоги
+LOCATIONS_DIR = os.path.join(DATA_DIR, "locations")     # Все локации
 
 # Максимальная дистанция взаимодействия (в клетках)
 INTERACT_RADIUS = 1

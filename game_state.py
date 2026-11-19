@@ -16,63 +16,52 @@ from entities.player import Player
 class GameState:
     """
     Класс, хранящий всё состояние игры.
-    Может быть сохранён в JSON и загружен обратно (методы save/load — в разработке).
+    Может быть сохранён в JSON и загружен обратно.
     """
-    
+
     def __init__(self):
         # --- ОБЩИЕ ПАРАМЕТРЫ ---
-        self.location = "hospital"               # Текущая локация (ID карты)
-        
+        # FIX: раньше здесь был хардкод "hospital", который не совпадает
+        # с реальным ID локации ("001_hospital"). Теперь значение
+        # устанавливается движком (GameEngine.__init__, switch_location).
+        self.location = ""
+
         # --- ДАННЫЕ ИГРОКА ---
-        # Теперь игрок — объект класса Player (а не словарь)
         self.player = Player(player_class="Идальго", gender="male")
-        
+
         # Инвентарь — отдельный объект (не часть Player, пока)
         self.inventory = Inventory()
-        
+
         # --- СЮЖЕТНЫЕ ФЛАГИ ---
-        self.flags = {}                          # Словарь {ключ: значение}
-        # Примеры: {"guard_encountered": True, "door_5_unlocked": True}
-        
+        self.flags = {}
+
         # --- ДИАЛОГОВАЯ СИСТЕМА ---
-        self.dialog_active = False               # Идёт ли диалог
-        self.dialog_text = ""                    # Текст текущей реплики
-        self.dialog_options = []                 # Список вариантов ответа
-        self.dialog_current_node = "start"       # Имя текущего узла в JSON
-        
+        self.dialog_active = False
+        self.dialog_text = ""
+        self.dialog_options = []
+        self.dialog_current_node = "start"
+
         # --- СОСТОЯНИЕ ИГРЫ ---
-        self.game_over = False                   # Флаг конца игры
-        
+        self.game_over = False
+
         # --- ХАРАКТЕРИСТИКИ ПЕРСОНАЖА ---
-        self.humanity = 50                       # Человечность (0–100)
-        
+        self.humanity = 50
+
         # --- ВРЕМЯ ---
-        self.time_of_day = "night"               # "day" или "night"
-        self.days_left = 14                      # Осталось дней до восстания
-        
+        self.time_of_day = "night"
+        self.days_left = 14
+
         # --- СОСТОЯНИЕ ОБЪЕКТОВ ---
-        self.door_states = {}                    # Словарь {"x,y": тип_тайла}
-        # Хранит изменения дверей (открыта/закрыта) между загрузками карты
-    
+        self.door_states = {}
+
     # -------------------------------------------------------------------------
     # РАБОТА С ДВЕРЯМИ
     # -------------------------------------------------------------------------
-    
+
     def set_door_state(self, x, y, tile_type):
-        """
-        Сохраняет состояние двери в клетке (x, y).
-        Аргументы:
-            x, y (int): Координаты двери.
-            tile_type (int): Новый тип тайла (2 — открыта, 5 — закрыта).
-        """
+        """Сохраняет состояние двери в клетке (x, y)."""
         self.door_states[f"{x},{y}"] = tile_type
-    
+
     def get_door_state(self, x, y):
-        """
-        Возвращает сохранённое состояние двери или None, если дверь не сохранялась.
-        Аргументы:
-            x, y (int): Координаты двери.
-        Возвращает:
-            int or None: Тип тайла или None.
-        """
+        """Возвращает сохранённое состояние двери или None."""
         return self.door_states.get(f"{x},{y}", None)

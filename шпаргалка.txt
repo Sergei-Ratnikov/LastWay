@@ -1,5 +1,5 @@
 git add .
-git commit -m "Логика отрисовки вынесена из game_engine в ui/renderer.py. Логика движения вынесена из из game_engine в systems/movement_system.py"
+git commit -m "неживые сужности перенесены из entities в objects"
 git push
 git push --force origin master - если есть расхождениЯ, но я уверен, что у меня последняя версия
 git clone https://

@@ -17,33 +17,24 @@ from logger import log
 class MovementSystem:
     """
     Система движения.
-    Получает ссылку на GameEngine, чтобы иметь доступ ко всем нужным данным
-    (game_state, current_map, move_queue, facing_direction и т.д.).
+    Получает ссылку на GameEngine, чтобы иметь доступ ко всем нужным данным.
     """
-    
+
     def __init__(self, game_engine):
-        """
-        Инициализация системы движения.
-        
-        Аргументы:
-            game_engine: Ссылка на GameEngine (источник всех данных).
-        """
         self.engine = game_engine
-    
+
     # -------------------------------------------------------------------------
     # ОБНОВЛЕНИЕ ДВИЖЕНИЯ ИГРОКА
     # -------------------------------------------------------------------------
-    
+
     def update_player_movement(self, current_time):
         """
         Обновляет движение игрока.
-        Вызывается из GameEngine.update().
-        
-        Аргументы:
-            current_time (int): Текущее время в миллисекундах.
+        FIX (#6): направление взгляда хранится в player.facing (Actor),
+        а не в engine.facing_direction.
         """
         engine = self.engine
-        
+
         # Если есть очередь движения — идём по ней
         if engine.move_queue:
             self.step(engine.game_state.player, is_player=True)
@@ -53,24 +44,22 @@ class MovementSystem:
             dx = dy = 0
             if keys[pygame.K_LEFT] or keys[pygame.K_a]:
                 dx = -1
-                engine.facing_direction = (-1, 0)
             if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
                 dx = 1
-                engine.facing_direction = (1, 0)
             if keys[pygame.K_UP] or keys[pygame.K_w]:
                 dy = -1
-                engine.facing_direction = (0, -1)
             if keys[pygame.K_DOWN] or keys[pygame.K_s]:
                 dy = 1
-                engine.facing_direction = (0, 1)
-            
-            # Если нажали клавишу — сбрасываем отложенное взаимодействие
+
             if dx != 0 or dy != 0:
+                # FIX: обновляем направление через player.set_facing_from_delta.
+                # Для диагоналей метод сохраняет последнее ортогональное направление.
+                engine.game_state.player.set_facing_from_delta(dx, dy)
+                # Сбрасываем отложенное взаимодействие (игрок сам управляет движением)
                 engine.pending_interaction = None
                 engine.pending_target_cell = None
                 engine.pending_npc_id = None
-            
-            # Двигаемся, если прошло достаточно времени
+
             if (dx != 0 or dy != 0) and current_time - engine.last_move_time >= MOVE_DELAY_MS:
                 nx = engine.game_state.player.x + dx
                 ny = engine.game_state.player.y + dy
@@ -78,48 +67,34 @@ class MovementSystem:
                     engine.game_state.player.x = nx
                     engine.game_state.player.y = ny
                     engine.last_move_time = current_time
-    
+
     # -------------------------------------------------------------------------
     # ОБНОВЛЕНИЕ ДВИЖЕНИЯ NPC
     # -------------------------------------------------------------------------
-    
+
     def update_npc_movement(self, npc, current_time):
-        """
-        Обновляет движение одного NPC.
-        Вызывается из GameEngine.update() для каждого NPC.
-        
-        Аргументы:
-            npc: Объект NPC.
-            current_time (int): Текущее время в миллисекундах.
-        """
+        """Обновляет движение одного NPC."""
         engine = self.engine
-        
-        # Если NPC стоит на месте — ничего не делаем
+
         if npc.movement == "stationary":
             return
-        
-        # Если NPC ждёт (расхождение) — ничего не делаем
         if npc.wait_until > current_time:
             return
-        
-        # -------------------------------------------------------------------------
-        # СЛЕДОВАНИЕ ЗА ДРУГИМ NPC
-        # -------------------------------------------------------------------------
+
+        # --- СЛЕДОВАНИЕ ЗА ДРУГИМ NPC ---
         if npc.movement == "follow" and npc.follow_target:
             target_npc = None
             for other in engine.current_map.npcs:
                 if other.id == npc.follow_target:
                     target_npc = other
                     break
-            
+
             if target_npc:
-                # Если уже рядом — останавливаемся
                 if abs(npc.x - target_npc.x) + abs(npc.y - target_npc.y) <= 1:
                     npc.path = []
                     npc.last_move_time = current_time
                     return
-                
-                # Если пути нет — строим
+
                 if not npc.path:
                     from world.pathfinding import find_path
                     path = find_path(
@@ -131,81 +106,69 @@ class MovementSystem:
                         npc.path = path
                     else:
                         npc.last_move_time = current_time
-                
+
                 self.step(npc, is_player=False)
                 return
-        
-        # -------------------------------------------------------------------------
-        # ПАТРУЛИРОВАНИЕ
-        # -------------------------------------------------------------------------
+
+        # --- ПАТРУЛИРОВАНИЕ ---
         if npc.patrol_points:
             target = npc.patrol_points[npc.patrol_index]
             if isinstance(target, list):
                 tx, ty = target[0], target[1]
             else:
                 tx, ty = target[0], target[1]
-            
-            # Если дошли до точки — переходим к следующей
+
             if (npc.x, npc.y) == (tx, ty):
                 npc.patrol_index = (npc.patrol_index + 1) % len(npc.patrol_points)
                 npc.last_move_time = current_time
                 return
-        
-        # Если пути нет, но есть точки патруля — строим путь
+
         if not npc.path and npc.patrol_points:
             if npc.wait_until > current_time:
                 return
-            
+
             target = npc.patrol_points[npc.patrol_index]
             if isinstance(target, list):
                 tx, ty = target[0], target[1]
             else:
                 tx, ty = target[0], target[1]
-            
+
             from world.pathfinding import find_path
             path = find_path(npc.x, npc.y, tx, ty, engine.current_map.is_walkable_static)
             if path:
                 npc.path = path
-        
-        # Делаем шаг
+
         self.step(npc, is_player=False)
-    
+
     # -------------------------------------------------------------------------
     # ОБНОВЛЕНИЕ ОТЛОЖЕННОГО ВЗАИМОДЕЙСТВИЯ
     # -------------------------------------------------------------------------
-    
+
     def update_pending_interaction(self):
-        """
-        Обновляет отложенное взаимодействие (подход к объекту по клику).
-        Вызывается из GameEngine.update().
-        """
+        """Обновляет отложенное взаимодействие (подход к объекту по клику)."""
         engine = self.engine
-        
         if not engine.pending_interaction:
             return
-        
+
         px, py = engine.game_state.player.x, engine.game_state.player.y
-        
-        # Если цель — движущийся NPC, обновляем её позицию
+
         if engine.pending_npc_id:
             npc = None
             for other in engine.current_map.npcs:
                 if other.id == engine.pending_npc_id:
                     npc = other
                     break
-            
+
             if npc:
                 engine.pending_interaction = (npc.x, npc.y)
             else:
-                # NPC исчез (например, умер) — сбрасываем
                 engine.pending_interaction = None
                 engine.pending_target_cell = None
                 engine.pending_npc_id = None
                 return
-        
+
         tx, ty = engine.pending_interaction
-        
-        # Если уже в радиусе — взаимодействуем
+
         if engine._is_in_range(tx, ty):
             engine._handle_interaction(tx, ty)
             log.info(f"АВТО-ВЗАИМОДЕЙСТВИЕ: с ({tx},{ty})")
@@ -213,7 +176,6 @@ class MovementSystem:
             engine.pending_target_cell = None
             engine.pending_npc_id = None
         elif not engine.move_queue:
-            # Путь кончился, но мы не в радиусе — перестраиваем путь
             approach = self.find_approach_cell(tx, ty)
             if approach:
                 from world.pathfinding import find_path
@@ -234,42 +196,33 @@ class MovementSystem:
                 engine.pending_interaction = None
                 engine.pending_target_cell = None
                 engine.pending_npc_id = None
-    
+
     # -------------------------------------------------------------------------
     # ШАГ СУЩНОСТИ (игрок или NPC)
     # -------------------------------------------------------------------------
-    
+
     def step(self, entity, is_player=False):
-        """
-        Делает один шаг сущности (игрок или NPC).
-        Обрабатывает обход препятствий, расхождение NPC, двери.
-        
-        Аргументы:
-            entity: Объект сущности (Player или NPC).
-            is_player (bool): True, если это игрок.
-        """
+        """Делает один шаг сущности (игрок или NPC)."""
         engine = self.engine
         current_time = pygame.time.get_ticks()
-        
+
         delay = MOVE_DELAY_MS if is_player else entity.move_delay_ms
         last_move = engine.last_move_time if is_player else entity.last_move_time
-        
+
         if current_time - last_move < delay:
             return
         if not is_player and entity.wait_until > current_time:
             return
-        
+
         path = engine.move_queue if is_player else entity.path
         if not path:
             return
-        
+
         next_x, next_y = path[0]
         curr_x = engine.game_state.player.x if is_player else entity.x
         curr_y = engine.game_state.player.y if is_player else entity.y
-        
-        # -------------------------------------------------------------------------
-        # ДВЕРИ
-        # -------------------------------------------------------------------------
+
+        # --- ДВЕРИ ---
         tile_ahead = engine.current_map.get_tile_type(next_x, next_y)
         if tile_ahead in (5, 6, 7, 8, 9):
             if engine.current_map.open_door(next_x, next_y):
@@ -281,18 +234,14 @@ class MovementSystem:
                 else:
                     entity.last_move_time = current_time
                 return
-        
-        # -------------------------------------------------------------------------
-        # ПРОВЕРКА ПРОХОДИМОСТИ
-        # -------------------------------------------------------------------------
+
+        # --- ПРОВЕРКА ПРОХОДИМОСТИ ---
         def check_walkable(tx, ty):
             if is_player:
                 return engine.current_map.is_walkable(tx, ty)
             return engine.current_map.is_walkable_for_npc(tx, ty, entity)
-        
-        # -------------------------------------------------------------------------
-        # ПРЕВЕНТИВНОЕ РАСХОЖДЕНИЕ
-        # -------------------------------------------------------------------------
+
+        # --- ПРЕВЕНТИВНОЕ РАСХОЖДЕНИЕ ---
         if not is_player:
             other_npc = engine.current_map.get_npc_at(next_x, next_y)
             if other_npc and other_npc.id < entity.id:
@@ -300,12 +249,10 @@ class MovementSystem:
                     log.info(f"ПРЕВЕНТИВ: {entity.name} уступает {other_npc.name}")
                     entity.wait_until = current_time + 400
                     return
-        
+
         blocked = not check_walkable(next_x, next_y)
-        
-        # -------------------------------------------------------------------------
-        # ВСТРЕЧНОЕ ДВИЖЕНИЕ
-        # -------------------------------------------------------------------------
+
+        # --- ВСТРЕЧНОЕ ДВИЖЕНИЕ ---
         if not is_player and blocked:
             other_npc = engine.current_map.get_npc_at(next_x, next_y)
             if other_npc and other_npc.path and other_npc.path[0] == (curr_x, curr_y):
@@ -313,20 +260,18 @@ class MovementSystem:
                     log.info(f"ВСТРЕЧА: {entity.name} уступает {other_npc.name}")
                     entity.wait_until = current_time + 500
                     return
-        
-        # -------------------------------------------------------------------------
-        # ОБХОД ПРЕПЯТСТВИЙ
-        # -------------------------------------------------------------------------
+
+        # --- ОБХОД ПРЕПЯТСТВИЙ ---
         if blocked:
             log.info(f"БЛОК: {entity.name if not is_player else 'Игрок'} на ({curr_x},{curr_y})")
-            
+
             if is_player:
                 engine.stuck_counter += 1
             else:
                 entity.stuck_counter += 1
-            
+
             current_stuck = engine.stuck_counter if is_player else entity.stuck_counter
-            
+
             if current_stuck > 2:
                 log.info(f"ТУПИК: {entity.name if not is_player else 'Игрок'}")
                 if is_player:
@@ -338,14 +283,14 @@ class MovementSystem:
                     entity.wait_until = current_time + 500
                     entity.stuck_counter = 0
                 return
-            
+
             dx = next_x - curr_x
             dy = next_y - curr_y
-            
+
             right_x, right_y = curr_x - dy, curr_y + dx
             left_x, left_y = curr_x + dy, curr_y - dx
             back_x, back_y = curr_x - dx, curr_y - dy
-            
+
             if check_walkable(right_x, right_y):
                 next_x, next_y = right_x, right_y
                 log.info(f"ОБХОД: {entity.name if not is_player else 'Игрок'} ВПРАВО")
@@ -366,7 +311,7 @@ class MovementSystem:
                     entity.wait_until = current_time + 500
                     entity.stuck_counter = 0
                 return
-            
+
             if is_player:
                 engine.move_queue = []
                 if engine.player_target:
@@ -384,11 +329,13 @@ class MovementSystem:
             else:
                 entity.path = []
                 entity.last_move_time = current_time
-        
-        # -------------------------------------------------------------------------
-        # ДВИЖЕНИЕ
-        # -------------------------------------------------------------------------
+
+        # --- ДВИЖЕНИЕ ---
         if check_walkable(next_x, next_y):
+            # FIX: обновляем направление взгляда сущности (player или NPC)
+            # через единый интерфейс Actor.set_facing_from_delta.
+            entity.set_facing_from_delta(next_x - curr_x, next_y - curr_y)
+
             if is_player:
                 engine.game_state.player.x = next_x
                 engine.game_state.player.y = next_y
@@ -410,19 +357,15 @@ class MovementSystem:
                         engine.current_map.close_door(ldx, ldy)
                         engine.current_map.reset_npcs_near_door(ldx, ldy)
                         entity.last_door_pos = None
-    
+
     # -------------------------------------------------------------------------
     # ПОИСК ПОДХОДНОЙ КЛЕТКИ
     # -------------------------------------------------------------------------
-    
+
     def find_approach_cell(self, obj_x, obj_y):
-        """
-        Находит клетку, к которой нужно подойти для взаимодействия с объектом в (obj_x, obj_y).
-        Учитывает access_side у контейнеров.
-        Возвращает (x, y) или None, если подойти некуда.
-        """
+        """Находит клетку для подхода к объекту с учётом access_side контейнеров."""
         engine = self.engine
-        
+
         container = engine.current_map.get_container_at(obj_x, obj_y)
         if container and container.access_side != "all":
             side = container.access_side
@@ -439,16 +382,16 @@ class MovementSystem:
             elif side == "east":
                 for dy in range(container.height):
                     candidates.append((container.x + container.width, container.y + dy))
-            
+
             for cx, cy in candidates:
                 if engine.current_map.is_walkable(cx, cy):
                     return (cx, cy)
             return None
-        
+
         px, py = engine.game_state.player.x, engine.game_state.player.y
         best = None
         best_dist = 9999
-        
+
         for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
             cx, cy = obj_x + dx, obj_y + dy
             if engine.current_map.is_walkable(cx, cy):

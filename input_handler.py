@@ -6,8 +6,8 @@ from settings import TILE_SIZE
 class InputHandler:
     """Преобразует события клавиатуры и мыши в игровые команды."""
 
-    def __init__(self):
-        self.move_queue = []
+    # FIX: удалён неиспользуемый self.move_queue из __init__.
+    # Очередь движения хранится в GameEngine.move_queue.
 
     def handle_event(self, event, game_state, current_map):
         if event.type == pygame.KEYDOWN:
@@ -18,7 +18,8 @@ class InputHandler:
 
     def _handle_key(self, event, game_state):
         """Обработка клавиатуры."""
-        # Если диалог активен — цифры 1-4
+        # Если диалог активен и есть варианты — обрабатываем цифры 1-4
+        # TODO (#2): когда опций нет, E/ESC должны закрывать диалог.
         if game_state.dialog_active and game_state.dialog_options:
             if event.key == pygame.K_1:
                 return ("dialog_choice", 0)
@@ -42,8 +43,6 @@ class InputHandler:
         elif event.key == pygame.K_F9:
             return "open_load_menu"
 
-
-
         return None
 
     def _handle_mouse(self, event, game_state, current_map):
@@ -53,14 +52,12 @@ class InputHandler:
             target_x = mouse_x // TILE_SIZE
             target_y = mouse_y // TILE_SIZE
 
-            # Проверяем, есть ли объект для взаимодействия в клетке
             if (current_map.get_npc_at(target_x, target_y) is not None or
                 current_map.get_container_at(target_x, target_y) is not None or
                 current_map.get_drop_at(target_x, target_y) is not None or
                 current_map.is_door(target_x, target_y)):
                 return ("interact", target_x, target_y)
 
-            # Иначе — движение
             return ("move_to", target_x, target_y)
 
         elif event.button == 3:  # ПКМ
