@@ -32,6 +32,17 @@
     "volume": 2,
     "weight": 0.8
   },
+  "doc_001": {
+    "category": "document",
+    "cost": 0,
+    "durability": 100,
+    "equippable": false,
+    "gender_restrict": "any",
+    "name": "Записка",
+    "storage_type": "archive",
+    "volume": 1,
+    "weight": 0.1
+  },
   "herb_mint": {
     "category": "ingredient",
     "cost": 3,

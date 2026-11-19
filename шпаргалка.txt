@@ -1,5 +1,5 @@
 git add .
-git commit -m "исправлены баги в диалогах"
+git commit -m "Новый Инвентарь полностью интегрирован"
 git push
 git push --force origin master - если есть расхождениЯ, но я уверен, что у меня последняя версия
 git clone https://

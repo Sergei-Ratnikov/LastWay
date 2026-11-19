@@ -264,6 +264,40 @@ class Map:
     def set_tile(self, x, y, tile_type):
         if 0 <= x < self.width and 0 <= y < self.height:
             self.tiles[y][x] = tile_type
+
+    # -------------------------------------------------------------------------
+    # СОЗДАНИЕ / ОБНОВЛЕНИЕ ДРОПОВ
+    # -------------------------------------------------------------------------
+    
+    def add_or_update_drop(self, x: int, y: int, item):
+        """
+        Добавляет предмет в существующий дроп на клетке (x, y) или создаёт новый.
+        Универсальный метод, используется при выбросе предметов игроком.
+        
+        Аргументы:
+            x, y (int): Координаты клетки, куда бросаем предмет.
+            item (Item): Экземпляр предмета для добавления.
+        """
+        from objects.drop import ItemDrop
+        
+        # Ищем существующий дроп на этих координатах
+        existing_drop = self.get_drop_at(x, y)
+        
+        if existing_drop:
+            # Дроп уже есть — добавляем предмет в него
+            existing_drop.add_item(item)
+            log.info(f"ДРОП: добавлен {item.name} в существующий дроп {existing_drop.id} на ({x},{y})")
+        else:
+            # Дропа нет — создаём новый
+            new_drop_id = f"drop_{len(self.drops) + 1}_{x}_{y}"
+            new_drop = ItemDrop(
+                drop_id=new_drop_id,
+                x=x,
+                y=y,
+                items=[item]
+            )
+            self.drops.append(new_drop)
+            log.info(f"ДРОП: создан новый {new_drop_id} на ({x},{y}) с {item.name}")
     
     # =========================================================================
     # ПОИСК СУЩНОСТЕЙ ПО КООРДИНАТАМ
@@ -302,7 +336,6 @@ class Map:
     # =========================================================================
     # УПРАВЛЕНИЕ NPC
     # =========================================================================
-    
     def reset_npcs_near_door(self, door_x, door_y):
         for npc in self.npcs:
             if abs(npc.x - door_x) <= 1 and abs(npc.y - door_y) <= 1:
@@ -315,7 +348,6 @@ class Map:
     # =========================================================================
     # ОБНОВЛЕНИЕ ЖИВОТНЫХ
     # =========================================================================
-    
     def update_animals(self, current_time):
         for animal in self.animals:
             animal.update_needs(current_time)

@@ -4,10 +4,8 @@
 # Управляет циклом, событиями, обновлением и отрисовкой.
 # =============================================================================
 
-import random
 import os
 import pygame
-import sys
 from settings import *
 from game_state import GameState
 from world.map import Map
@@ -18,7 +16,6 @@ from input_handler import InputHandler
 from logger import log
 from systems.movement_system import MovementSystem
 from objects.drop import ItemDrop
-
 
 class GameEngine:
     """Главный игровой движок. Управляет циклом, событиями, обновлением и отрисовкой."""
@@ -72,6 +69,7 @@ class GameEngine:
         self.running = True
         self.exit_code = None
         self.inventory_open = False
+        self.inventory_selected_index = 0  # FIX: индекс выбранного предмета в инвентаре
 
         # Ввод
         self.input_handler = InputHandler()
@@ -92,6 +90,8 @@ class GameEngine:
         # Системы
         self.renderer = Renderer(self)
         self.movement_system = MovementSystem(self)
+        from ui.loot_menu_ui import LootMenu
+        self.loot_menu = LootMenu(self)
 
     # -------------------------------------------------------------------------
     # ОСНОВНОЙ ЦИКЛ
@@ -163,13 +163,40 @@ class GameEngine:
                 # Прочие события при открытом меню сохранений — игнорируем
                 continue
 
+            # --- ОКНО ОБМЕНА (LOOT MENU) ---
+            # Пока окно обмена открыто, слушаем только его клавиши.
+            if self.loot_menu.is_active:
+                if event.type == pygame.KEYDOWN:
+                    if self.loot_menu.handle_event(event):
+                        continue
+                continue
+
             # --- ИНВЕНТАРЬ ---
-            # Пока инвентарь открыт, слушаем только I и ESC.
+            # Пока инвентарь открыт, слушаем только его клавиши.
             if self.inventory_open:
                 if event.type == pygame.KEYDOWN:
+                    # Закрытие инвентаря
                     if event.key == pygame.K_i or event.key == pygame.K_ESCAPE:
                         self.inventory_open = False
                         continue
+                    
+                    # Навигация по списку
+                    if event.key == pygame.K_UP:
+                        self.inventory_selected_index = max(0, self.inventory_selected_index - 1)
+                        continue
+                    if event.key == pygame.K_DOWN:
+                        items = self.game_state.inventory.get_items()
+                        self.inventory_selected_index = min(
+                            len(items) - 1, 
+                            self.inventory_selected_index + 1
+                        )
+                        continue
+                    
+                    # Выброс предмета под ноги
+                    if event.key == pygame.K_DELETE:
+                        self._drop_selected_item()
+                        continue
+                
                 # Прочие события при открытом инвентаре — игнорируем
                 continue
 
@@ -297,6 +324,55 @@ class GameEngine:
             return
         self._handle_interaction(nx, ny)
 
+    def _drop_selected_item(self):
+        """
+        Выбрасывает выбранный предмет из инвентаря под ноги игрока.
+        Проверяет, не квестовый ли предмет (их нельзя выбрасывать).
+        """
+        items = self.game_state.inventory.get_items()
+        
+        # Проверяем, что инвентарь не пуст
+        if not items:
+            self._show_message("Инвентарь пуст")
+            return
+        
+        # Проверяем, что индекс валиден
+        if self.inventory_selected_index >= len(items):
+            return
+        
+        item = items[self.inventory_selected_index]
+        
+        # Проверка: квестовые предметы нельзя выбрасывать
+        from objects.item import ItemCategory
+        if item.category == ItemCategory.QUEST:
+            self._show_message("Этот предмет слишком важен, чтобы выбрасывать")
+            log.info(f"БРОСОК: попытка выбросить квестовый предмет {item.name} — отказано")
+            return
+        
+        # Удаляем из инвентаря
+        removed = self.game_state.inventory.remove_item(item)
+        if not removed:
+            log.warning(f"БРОСОК: не удалось удалить {item.name} из инвентаря")
+            return
+        
+        # Бросаем под ноги игрока
+        player_x = self.game_state.player.x
+        player_y = self.game_state.player.y
+        self.current_map.add_or_update_drop(player_x, player_y, item)
+        
+        log.info(f"БРОСОК: игрок выбросил {item.name} на ({player_x},{player_y})")
+        self._show_message(f"Выброшено: {item.name}")
+        
+        # Корректируем индекс, если список стал короче
+        items_after = self.game_state.inventory.get_items()
+        if not items_after:
+            self.inventory_selected_index = 0
+        else:
+            self.inventory_selected_index = max(
+                0, 
+                min(self.inventory_selected_index, len(items_after) - 1)
+            )
+
     def _handle_interaction(self, x, y):
         if not self._is_in_range(x, y):
             self._show_message("Слишком далеко")
@@ -319,56 +395,22 @@ class GameEngine:
                 self._show_message("Контейнер заперт")
                 log.info(f"КОНТЕЙНЕР: {container.id} заперт")
                 return
+            # Открываем контейнер (если ещё не открыт)
             if not container.is_open:
                 container.open()
                 log.info(f"КОНТЕЙНЕР: {container.id} открыт")
-            if not container.items:
-                self._show_message(f"{container.name} пуст")
-                return
-            
-            # ВАЖНО: работаем с объектами Item, не со строками ID
-            items_taken = []
-            items_left = []
-            for item in container.items[:]:  # Копируем список для безопасного удаления
-                if self.game_state.inventory.add_item(item):
-                    container.remove_item(item)
-                    items_taken.append(item.name)
-                    log.info(f"ПЕРЕНОС: игрок забрал {item.name} из {container.name}")
-                else:
-                    items_left.append(item.name)
-                    log.info(f"ПЕРЕНОС: {item.name} не влез (превышен вес)")
-            
-            if items_taken:
-                self._show_message(f"Из {container.name} взято: {', '.join(items_taken)}")
-            if items_left:
-                self._show_message(f"Не влезло: {', '.join(items_left)}")
+            # Открываем окно обмена (вместо автозабора)
+            self.loot_menu.open(container, "container")
             return
-        
+
         # 3. Дроп
         drop = self.current_map.get_drop_at(x, y)
         if drop:
-            items_text = []
-            items_not_taken = []
-            for item in drop.items[:]:
-                if self.game_state.inventory.add_item(item):
-                    drop.take_item(item)
-                    items_text.append(item.name)
-                    log.info(f"ПОДБОР: игрок подобрал {item.name} из {drop.id}")
-                else:
-                    items_not_taken.append(item.name)
-                    log.info(f"ПОДБОР: {item.name} не влез (превышен вес)")
-            
-            if items_text:
-                self._show_message(f"Подобрано: {', '.join(items_text)}")
-            if items_not_taken:
-                self._show_message(f"Не влезло: {', '.join(items_not_taken)}")
-            
-            if drop.is_empty:
-                if drop in self.current_map.drops:
-                    self.current_map.drops.remove(drop)
-                log.info(f"ДРОП: {drop.id} удален с карты")
+            # Открываем окно обмена (вместо автозабора)
+            # Пустой дроп будет автоматически удалён при закрытии LootMenu.close()
+            self.loot_menu.open(drop, "drop")
             return
-        
+
         # 4. Дверь
         tile_type = self.current_map.get_tile_type(x, y)
         if tile_type in (5, 6, 7, 9):
@@ -388,7 +430,8 @@ class GameEngine:
     # ОБНОВЛЕНИЕ
     # -------------------------------------------------------------------------
     def update(self, current_time: int):
-        if self.game_state.dialog_active or self.inventory_open or self.save_menu_open:
+        if (self.game_state.dialog_active or self.inventory_open 
+                or self.save_menu_open or self.loot_menu.is_active):
             return
 
         # Движение игрока
@@ -521,18 +564,20 @@ class GameEngine:
         self.pending_target_cell = None
         self.pending_npc_id = None
 
-    # -------------------------------------------------------------------------
+    # =============================================================================
     # ОТРИСОВКА
-    # -------------------------------------------------------------------------
+    # =============================================================================
+
     def render(self):
         """
         Отрисовка кадра.
-        После рефакторинга вся логика (и карта, и UI) теперь в Renderer.
+        Делегирует карту и UI рендереру, затем рисует LootMenu поверх.
         """
         self.screen.fill(BLACK)
-        # Вся отрисовка делегируется Renderer'у — он сам знает порядок слоёв
+        # Вся отрисовка карты и базового UI
         self.renderer.render(self.screen)
-
+        # FIX: Окно обмена рисуется поверх всего (как модальное окно)
+        self.loot_menu.render(self.screen)
 
     def _show_message(self, text):
         self.temp_message = text
