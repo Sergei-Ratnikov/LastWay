@@ -507,10 +507,14 @@ class GameEngine:
     # ОТРИСОВКА
     # -------------------------------------------------------------------------
     def render(self):
-        """Отрисовка кадра. Делегируется рендереру."""
+        """
+        Отрисовка кадра.
+        После рефакторинга вся логика (и карта, и UI) теперь в Renderer.
+        """
         self.screen.fill(BLACK)
-        self.current_map.render(self.screen, 0, 0)
+        # Вся отрисовка делегируется Renderer'у — он сам знает порядок слоёв
         self.renderer.render(self.screen)
+
 
     def _show_message(self, text):
         self.temp_message = text
