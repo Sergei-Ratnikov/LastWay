@@ -109,7 +109,6 @@ class GameEngine:
     # -------------------------------------------------------------------------
     # СОБЫТИЯ
     # -------------------------------------------------------------------------
-
     def handle_events(self):
         """
         Обработка событий pygame.
@@ -180,14 +179,12 @@ class GameEngine:
 
     def _process_command(self, command):
         log.info(f"Получена команда {command}")
-
         if isinstance(command, tuple):
             cmd_type = command[0]
             if cmd_type == "dialog_choice":
                 self.dialog_system.choose_option(command[1])
             elif cmd_type == "interact":
                 _, target_x, target_y = command
-
                 # Сначала: если в радиусе — сразу взаимодействуем
                 if self._is_in_range(target_x, target_y):
                     self.pending_npc_id = None
@@ -195,7 +192,6 @@ class GameEngine:
                     self.pending_target_cell = None
                     self._handle_interaction(target_x, target_y)
                     return
-
                 # Проверяем, есть ли в этой клетке NPC (движущийся или нет)
                 npc = self.current_map.get_npc_at(target_x, target_y)
                 if npc:
@@ -204,7 +200,6 @@ class GameEngine:
                 else:
                     self.pending_npc_id = None
                     self.pending_interaction = (target_x, target_y)
-
                 # Строим путь к текущей позиции цели
                 approach = self.movement_system.find_approach_cell(
                     self.pending_interaction[0], self.pending_interaction[1]
@@ -212,7 +207,6 @@ class GameEngine:
                 if not approach:
                     self._show_message("Не подойти к объекту")
                     return
-
                 from world.pathfinding import find_path
                 path = find_path(
                     self.game_state.player.x,
@@ -243,7 +237,14 @@ class GameEngine:
         else:
             if command == "interact":
                 self._interact()
+                
+            # ФИКС #2: Обработка явного закрытия диалога (клавиши E, Space, Enter)
+            elif command == "close_dialog":
+                if self.game_state.dialog_active:
+                    self.dialog_system.close_dialog()
+                    
             elif command == "menu":
+                # ESC тоже закрывает диалог, если он открыт, иначе выходит в меню/из игры
                 if self.game_state.dialog_active:
                     self.dialog_system.close_dialog()
                 else:
@@ -371,7 +372,6 @@ class GameEngine:
     # -------------------------------------------------------------------------
     # ОБНОВЛЕНИЕ
     # -------------------------------------------------------------------------
-
     def update(self, current_time: int):
         if self.game_state.dialog_active or self.inventory_open or self.save_menu_open:
             return
@@ -400,7 +400,6 @@ class GameEngine:
     # -------------------------------------------------------------------------
     # ПЕРЕХОД МЕЖДУ ЛОКАЦИЯМИ
     # -------------------------------------------------------------------------
-
     def switch_location(self, target_location_id, target_exit_id):
         # --- 1. СОХРАНЯЕМ СОСТОЯНИЕ ТЕКУЩЕЙ ЛОКАЦИИ ---
         current_location_id = self.current_map.location_id
@@ -507,7 +506,6 @@ class GameEngine:
     # -------------------------------------------------------------------------
     # ОТРИСОВКА
     # -------------------------------------------------------------------------
-
     def render(self):
         """Отрисовка кадра. Делегируется рендереру."""
         self.screen.fill(BLACK)
