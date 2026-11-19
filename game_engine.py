@@ -17,6 +17,7 @@ from ui.renderer import Renderer
 from input_handler import InputHandler
 from logger import log
 from systems.movement_system import MovementSystem
+from objects.drop import ItemDrop
 
 
 class GameEngine:
@@ -249,9 +250,26 @@ class GameEngine:
                     self.dialog_system.close_dialog()
                 else:
                     self.running = False
+
             elif command == "open_inventory":
                 self.inventory_open = not self.inventory_open
                 log.info(f"Инвентарь: {'открыт' if self.inventory_open else 'закрыт'}")
+                
+                # ДИАГНОСТИКА: при открытии печатаем весь инвентарь с типами объектов
+                if self.inventory_open:
+                    inv = self.game_state.inventory
+                    log.info(f"=== ДАМП ИНВЕНТАРЯ ({len(inv.items)} предметов) ===")
+                    for i, item in enumerate(inv.items):
+                        log.info(
+                            f"  [{i}] {item.name} (ID: {item.id}) — "
+                            f"класс: {type(item).__name__}, "
+                            f"категория: {item.category.value}, "
+                            f"хранение: {item.storage_type.value}, "
+                            f"объект: {id(item)}"
+                        )
+                    log.info(f"=== КОНЕЦ ДАМПА (вес: {inv.get_total_weight():.1f}/{inv.max_weight:.1f} кг) ===")
+
+
             elif command == "context_menu":
                 pass
             elif command == "open_save_menu":
@@ -283,13 +301,13 @@ class GameEngine:
         if not self._is_in_range(x, y):
             self._show_message("Слишком далеко")
             return
-
+        
         # 1. NPC
         npc = self.current_map.get_npc_at(x, y)
         if npc:
             self.dialog_system.load_dialog(npc.dialog_id)
             return
-
+        
         # 2. Контейнер
         container = self.current_map.get_container_at(x, y)
         if container:
@@ -307,54 +325,51 @@ class GameEngine:
             if not container.items:
                 self._show_message(f"{container.name} пуст")
                 return
-
+            
+            # ВАЖНО: работаем с объектами Item, не со строками ID
             items_taken = []
             items_left = []
-            for item_id in container.items[:]:
-                if self.game_state.inventory.add_item(item_id):
-                    container.items.remove(item_id)
-                    items_taken.append(item_id)
-                    log.info(f"ПЕРЕНОС: игрок забрал {item_id} из {container.name}")
+            for item in container.items[:]:  # Копируем список для безопасного удаления
+                if self.game_state.inventory.add_item(item):
+                    container.remove_item(item)
+                    items_taken.append(item.name)
+                    log.info(f"ПЕРЕНОС: игрок забрал {item.name} из {container.name}")
                 else:
-                    items_left.append(item_id)
-                    log.info(f"ПЕРЕНОС: {item_id} не влез (превышен вес)")
-
+                    items_left.append(item.name)
+                    log.info(f"ПЕРЕНОС: {item.name} не влез (превышен вес)")
+            
             if items_taken:
                 self._show_message(f"Из {container.name} взято: {', '.join(items_taken)}")
             if items_left:
                 self._show_message(f"Не влезло: {', '.join(items_left)}")
             return
-
+        
         # 3. Дроп
-        # FIX: убрана мёртвая проверка `if drop.is_empty` — get_drop_at
-        # и так возвращает только непустые дропы.
         drop = self.current_map.get_drop_at(x, y)
         if drop:
             items_text = []
             items_not_taken = []
-            for item_id in drop.items[:]:
-                if self.game_state.inventory.add_item(item_id):
-                    drop.items.remove(item_id)
-                    items_text.append(item_id)
-                    log.info(f"ПОДБОР: игрок подобрал {item_id} из {drop.id}")
+            for item in drop.items[:]:
+                if self.game_state.inventory.add_item(item):
+                    drop.take_item(item)
+                    items_text.append(item.name)
+                    log.info(f"ПОДБОР: игрок подобрал {item.name} из {drop.id}")
                 else:
-                    items_not_taken.append(item_id)
-                    log.info(f"ПОДБОР: {item_id} не влез (превышен вес)")
-
+                    items_not_taken.append(item.name)
+                    log.info(f"ПОДБОР: {item.name} не влез (превышен вес)")
+            
             if items_text:
                 self._show_message(f"Подобрано: {', '.join(items_text)}")
             if items_not_taken:
                 self._show_message(f"Не влезло: {', '.join(items_not_taken)}")
-
+            
             if drop.is_empty:
                 if drop in self.current_map.drops:
                     self.current_map.drops.remove(drop)
                 log.info(f"ДРОП: {drop.id} удален с карты")
             return
-
+        
         # 4. Дверь
-        # FIX: убран тайл 8 ("разрушаемая стена") — он не дверь
-        # (в tiles.json у него нет is_door: true), open_door возвращал False.
         tile_type = self.current_map.get_tile_type(x, y)
         if tile_type in (5, 6, 7, 9):
             self.current_map.open_door(x, y)
@@ -425,14 +440,16 @@ class GameEngine:
                 "width": container.width,
                 "height": container.height,
                 "is_open": container.is_open,
-                "items": container.items.copy(),
+                "items": container.items_to_dict_list(),  # Сериализуем предметы
                 "access_side": container.access_side,
             })
-
+            
         for drop in self.current_map.drops:
             state_data["drops"].append({
-                "id": drop.id, "x": drop.x, "y": drop.y, "items": drop.items.copy()
+                "id": drop.id, "x": drop.x, "y": drop.y,
+                "items": drop.items_to_dict_list()  # Сериализуем предметы
             })
+
 
         self.location_manager.save_location_state(current_location_id, state_data)
         log.info(f"ПЕРЕХОД: сохранено состояние {current_location_id}")
@@ -477,16 +494,17 @@ class GameEngine:
                 for container in self.current_map.containers:
                     if container.id == cont_save["id"]:
                         container.is_open = cont_save["is_open"]
-                        container.items = cont_save["items"].copy()
+                        container.load_items_from_dict_list(cont_save["items"])
                         break
-
+            
             self.current_map.drops.clear()
-            from objects.drop import ItemDrop
             for drop_save in saved_state["drops"]:
-                self.current_map.drops.append(ItemDrop(
+                new_drop = ItemDrop(
                     drop_id=drop_save["id"], x=drop_save["x"], y=drop_save["y"],
-                    items=drop_save["items"].copy()
-                ))
+                    items=[]
+                )
+                new_drop.load_items_from_dict_list(drop_save["items"])
+                self.current_map.drops.append(new_drop)            
 
         # --- 4. СТАВИМ ИГРОКА НА ТОЧКУ ВЫХОДА ---
         for exit_data in self.current_map.exits:

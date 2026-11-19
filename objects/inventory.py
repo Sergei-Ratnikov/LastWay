@@ -2,57 +2,172 @@
 # =============================================================================
 # ИНВЕНТАРЬ
 # Логика хранения предметов игрока.
-# Считает вес, проверяет лимиты, добавляет/удаляет предметы.
+# Хранит экземпляры класса Item, считает вес, проверяет лимиты.
 # =============================================================================
 
-from world.item_data import ItemData
+from objects.item import Item, create_item
+from logger import log
 
 
 class Inventory:
     """
     Инвентарь игрока.
-    Хранит список предметов, считает вес, проверяет лимиты.
+    Хранит список объектов Item (не строки ID).
+    Считает общий вес, проверяет лимиты при добавлении.
     """
     
-    def __init__(self):
-        """Инициализация инвентаря."""
-        self.items = []
-        self.max_weight = 50.0  # Пока фиксированный лимит
-        self.item_data = ItemData()
+    def __init__(self, max_weight: float = 50.0):
+        """
+        Инициализация инвентаря.
+        
+        Аргументы:
+            max_weight (float): Максимальный переносимый вес в кг.
+        """
+        # Список объектов Item (не строк!)
+        self.items: list[Item] = []
+        # Лимит веса (синхронизируется с классом игрока в GameEngine)
+        self.max_weight = max_weight
     
-    def add_item(self, item_id):
+    # =========================================================================
+    # ДОБАВЛЕНИЕ / УДАЛЕНИЕ
+    # =========================================================================
+        
+    def add_item(self, item: Item) -> bool:
         """
         Добавляет предмет в инвентарь.
-        Возвращает True, если успешно, False, если не влезает.
+        Логирует реальный класс предмета для диагностики.
         """
-        mass = self.item_data.get_mass(item_id)
-        if self.get_total_weight() + mass > self.max_weight:
-            return False  # Не влезает
-        self.items.append(item_id)
+        new_weight = self.get_total_weight() + (item.weight * item.quantity)
+        if new_weight > self.max_weight:
+            log.info(f"ИНВЕНТАРЬ: {item.name} не влез (превышен вес)")
+            return False
+        
+        self.items.append(item)
+        # ДИАГНОСТИКА: печатаем реальный тип объекта (KeyItem, DocumentItem и т.д.)
+        log.info(
+            f"ИНВЕНТАРЬ: добавлен {item.name} (x{item.quantity}) "
+            f"[класс: {type(item).__name__}, id объекта: {id(item)}]"
+        )
         return True
+
     
-    def remove_item(self, item_id):
-        """Удаляет предмет из инвентаря. Возвращает True, если успешно."""
-        if item_id in self.items:
-            self.items.remove(item_id)
-            return True
-        return False
+    def remove_item(self, item: Item) -> Item | None:
+        """
+        Удаляет конкретный экземпляр предмета из инвентаря.
+        
+        Аргументы:
+            item (Item): Экземпляр предмета для удаления.
+            
+        Возвращает:
+            Item | None: Удалённый предмет или None, если не найден.
+        """
+        if item in self.items:
+            self.items.remove(item)
+            log.info(f"ИНВЕНТАРЬ: удалён {item.name}")
+            return item
+        return None
     
-    def has_item(self, item_id):
-        """Проверяет, есть ли предмет в инвентаре."""
-        return item_id in self.items
+    def remove_item_by_id(self, item_id: str) -> Item | None:
+        """
+        Удаляет первый найденный предмет с указанным ID.
+        Используется, когда нужен именно ID (например, для квестов).
+        
+        Аргументы:
+            item_id (str): ID предмета для удаления.
+            
+        Возвращает:
+            Item | None: Удалённый предмет или None, если не найден.
+        """
+        for item in self.items:
+            if item.id == item_id:
+                self.items.remove(item)
+                log.info(f"ИНВЕНТАРЬ: удалён {item.name} (по ID {item_id})")
+                return item
+        return None
     
-    def get_items(self):
-        """Возвращает копию списка предметов."""
+    # =========================================================================
+    # ЗАПРОСЫ
+    # =========================================================================
+    
+    def has_item(self, item_id: str) -> bool:
+        """
+        Проверяет наличие предмета по ID (для квестов/диалогов).
+        
+        Аргументы:
+            item_id (str): ID предмета для проверки.
+            
+        Возвращает:
+            bool: True, если предмет есть в инвентаре.
+        """
+        return any(item.id == item_id for item in self.items)
+    
+    def get_item_by_id(self, item_id: str) -> Item | None:
+        """
+        Возвращает первый найденный предмет с указанным ID.
+        
+        Аргументы:
+            item_id (str): ID предмета.
+            
+        Возвращает:
+            Item | None: Найденный предмет или None.
+        """
+        for item in self.items:
+            if item.id == item_id:
+                return item
+        return None
+    
+    def get_items(self) -> list[Item]:
+        """
+        Возвращает копию списка предметов.
+        
+        Возвращает:
+            list[Item]: Копия списка объектов Item.
+        """
         return self.items.copy()
     
-    def get_total_weight(self):
-        """Вычисляет общий вес всех предметов."""
-        total = 0.0
-        for item_id in self.items:
-            total += self.item_data.get_mass(item_id)
-        return total
+    def get_total_weight(self) -> float:
+        """
+        Вычисляет общий вес всех предметов в инвентаре.
+        
+        Возвращает:
+            float: Общий вес в кг.
+        """
+        return sum(item.weight * item.quantity for item in self.items)
     
-    def is_empty(self):
-        """Проверяет, пуст ли инвентарь."""
+    def is_empty(self) -> bool:
+        """
+        Проверяет, пуст ли инвентарь.
+        
+        Возвращает:
+            bool: True, если предметов нет.
+        """
         return len(self.items) == 0
+    
+    # =========================================================================
+    # СЕРИАЛИЗАЦИЯ ДЛЯ СОХРАНЕНИЙ
+    # =========================================================================
+    
+    def to_dict_list(self) -> list[dict]:
+        """
+        Сериализует все предметы в список словарей для JSON.
+        
+        Возвращает:
+            list[dict]: Список словарей (каждый — результат item.to_dict()).
+        """
+        return [item.to_dict() for item in self.items]
+    
+    def load_from_dict_list(self, data_list: list[dict]):
+        """
+        Загружает предметы из списка словарей (из JSON сохранения).
+        Очищает текущий инвентарь перед загрузкой.
+        
+        Аргументы:
+            data_list (list[dict]): Список словарей с данными предметов.
+        """
+        self.items.clear()
+        for item_dict in data_list:
+            try:
+                item = Item.from_dict(item_dict)
+                self.items.append(item)
+            except Exception as e:
+                log.error(f"ИНВЕНТАРЬ: ошибка загрузки предмета из dict: {e}")

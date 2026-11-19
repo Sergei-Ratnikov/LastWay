@@ -5,14 +5,18 @@
 # Может занимать несколько клеток и иметь сторону доступа.
 # =============================================================================
 
+from objects.item import Item
+from logger import log
+
+
 class Container:
     """
     Контейнер (сундук, стол, шкаф и т.д.).
-    Хранит предметы, может быть открыт/закрыт, заперт.
+    Хранит объекты Item, может быть открыт/закрыт, заперт.
     """
     
     def __init__(self, container_id, x, y, name="Ящик", locked=False, items=None, 
-                 width=1, height=1, access_side="all"):
+                  width=1, height=1, access_side="all"):
         """
         Инициализация контейнера.
         
@@ -21,7 +25,7 @@ class Container:
             x, y (int): Координаты на карте.
             name (str): Отображаемое имя.
             locked (bool): Заперт ли контейнер.
-            items (list): Список ID предметов внутри.
+            items (list[Item]): Список объектов Item внутри.
             width, height (int): Размеры контейнера (в клетках).
             access_side (str): Сторона доступа ("all", "north", "south", "east", "west").
         """
@@ -30,13 +34,18 @@ class Container:
         self.y = y
         self.name = name
         self.locked = locked
-        self.items = items if items else []
+        # Список объектов Item (не строк!)
+        self.items: list[Item] = items if items else []
         self.is_open = False
         self.is_destroyed = False
         self.width = width
         self.height = height
         self.facing = (0, 0)
         self.access_side = access_side
+    
+    # =========================================================================
+    # ГЕОМЕТРИЯ
+    # =========================================================================
     
     def get_occupied_cells(self):
         """Возвращает список клеток, которые занимает контейнер."""
@@ -57,8 +66,6 @@ class Container:
         """
         if self.access_side == "all":
             return True
-        
-        # Для односторонних проверяем, что игрок стоит с нужной стороны
         if self.access_side == "north":
             return (player_y == self.y - 1 and self.x <= player_x < self.x + self.width)
         if self.access_side == "south":
@@ -67,8 +74,11 @@ class Container:
             return (player_x == self.x - 1 and self.y <= player_y < self.y + self.height)
         if self.access_side == "east":
             return (player_x == self.x + self.width and self.y <= player_y < self.y + self.height)
-        
         return False
+    
+    # =========================================================================
+    # ОТКРЫТИЕ / ЗАКРЫТИЕ
+    # =========================================================================
     
     def open(self):
         """Открывает контейнер. Возвращает "locked" если заперт, иначе "opened"."""
@@ -81,17 +91,71 @@ class Container:
         """Закрывает контейнер."""
         self.is_open = False
     
-    def add_item(self, item_id):
-        """Добавляет предмет в контейнер."""
-        self.items.append(item_id)
+    # =========================================================================
+    # РАБОТА С ПРЕДМЕТАМИ
+    # =========================================================================
     
-    def remove_item(self, item_id):
-        """Удаляет предмет из контейнера. Возвращает предмет или None."""
-        if item_id in self.items:
-            self.items.remove(item_id)
-            return item_id
+    def add_item(self, item: Item):
+        """
+        Добавляет предмет в контейнер.
+        
+        Аргументы:
+            item (Item): Экземпляр предмета для добавления.
+        """
+        self.items.append(item)
+        log.info(f"КОНТЕЙНЕР: в {self.name} добавлен {item.name}")
+    
+    def remove_item(self, item: Item) -> Item | None:
+        """
+        Удаляет конкретный экземпляр предмета из контейнера.
+        
+        Аргументы:
+            item (Item): Экземпляр предмета для удаления.
+            
+        Возвращает:
+            Item | None: Удалённый предмет или None.
+        """
+        if item in self.items:
+            self.items.remove(item)
+            log.info(f"КОНТЕЙНЕР: из {self.name} удалён {item.name}")
+            return item
         return None
     
-    def get_items(self):
+    def remove_item_by_id(self, item_id: str) -> Item | None:
+        """
+        Удаляет первый найденный предмет с указанным ID.
+        
+        Аргументы:
+            item_id (str): ID предмета.
+            
+        Возвращает:
+            Item | None: Удалённый предмет или None.
+        """
+        for item in self.items:
+            if item.id == item_id:
+                self.items.remove(item)
+                return item
+        return None
+    
+    def get_items(self) -> list[Item]:
         """Возвращает копию списка предметов."""
         return self.items.copy()
+    
+    # =========================================================================
+    # СЕРИАЛИЗАЦИЯ
+    # =========================================================================
+    
+    def items_to_dict_list(self) -> list[dict]:
+        """Сериализует предметы контейнера в список словарей."""
+        return [item.to_dict() for item in self.items]
+    
+    def load_items_from_dict_list(self, data_list: list[dict]):
+        """Загружает предметы из списка словарей."""
+        self.items.clear()
+        for item_dict in data_list:
+            try:
+                from objects.item import Item
+                item = Item.from_dict(item_dict)
+                self.items.append(item)
+            except Exception as e:
+                log.error(f"КОНТЕЙНЕР: ошибка загрузки предмета: {e}")

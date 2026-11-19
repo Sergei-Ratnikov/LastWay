@@ -416,45 +416,44 @@ class Renderer:
     # =========================================================================
     # ИНВЕНТАРЬ
     # =========================================================================
+   
     def _render_inventory(self, screen):
         """Отрисовка окна инвентаря."""
         if not self.engine.inventory_open:
             return
-            
-        panel_rect = pygame.Rect(100, 100, WIDTH - 200, HEIGHT - 200)
-        self._draw_panel_rect(screen, panel_rect, fill_alpha=230, border_width=3)
         
-        title_font = self._get_font(36)
-        item_font = self._get_font(24)
+        surf = pygame.Surface((WIDTH - 200, HEIGHT - 200))
+        surf.set_alpha(230)
+        surf.fill(BLACK)
+        screen.blit(surf, (100, 100))
+        pygame.draw.rect(screen, WHITE, (100, 100, WIDTH - 200, HEIGHT - 200), 3)
         
+        title_font = pygame.font.Font(None, 36)
         screen.blit(title_font.render("Инвентарь", True, YELLOW), (120, 120))
         
+        item_font = pygame.font.Font(None, 24)
+        
+        # ВАЖНО: теперь items — это список объектов Item, а не строк ID
         items = self.engine.game_state.inventory.get_items()
         if not items:
-            screen.blit(
-                item_font.render("(пусто)", True, (150, 150, 150)), 
-                (120, 170)
-            )
+            screen.blit(item_font.render("(пусто)", True, (150, 150, 150)), (120, 170))
         else:
-            for i, item_id in enumerate(items):
+            for i, item in enumerate(items):
                 if i >= 15:
                     break
-                # Показываем человекочитаемое имя из items.json
-                item_prop = self.item_data.get(item_id, {}) or {}
-                item_name = item_prop.get("name", item_id)
-                screen.blit(
-                    item_font.render(f"{i+1}. {item_name}", True, WHITE), 
-                    (120, 170 + i * 30)
-                )
-                
-        # Текущий вес
+                # Берём имя и количество напрямую из объекта Item
+                display_text = f"{i+1}. {item.name}"
+                if item.quantity > 1:
+                    display_text += f" (x{item.quantity})"
+                screen.blit(item_font.render(display_text, True, WHITE), (120, 170 + i * 30))
+        
+        # Показ текущего веса
         inv = self.engine.game_state.inventory
         weight_text = f"Вес: {inv.get_total_weight():.1f} / {inv.max_weight:.1f} кг"
         screen.blit(item_font.render(weight_text, True, WHITE), (120, HEIGHT - 160))
-        screen.blit(
-            item_font.render("Нажми I, чтобы закрыть", True, (150, 150, 150)), 
-            (120, HEIGHT - 130)
-        )
+        screen.blit(item_font.render("Нажми I, чтобы закрыть", True, (150, 150, 150)), (120, HEIGHT - 130))
+
+
 
     # =========================================================================
     # ВРЕМЕННОЕ СООБЩЕНИЕ (всплывающие уведомления)
