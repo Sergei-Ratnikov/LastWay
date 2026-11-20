@@ -1,6 +1,12 @@
 # objects/item_document.py
+# =============================================================================
+# ДОКУМЕНТ (DocumentItem)
+# Письма, дневники, пропуска, доносы.
+# Можно прочитать (открывает окно с текстом), предъявить NPC, подделать.
+# =============================================================================
 
 from objects.item import Item, ItemCategory
+from world.item_data import ItemData
 from logger import log
 
 
@@ -9,22 +15,9 @@ class DocumentItem(Item):
     Документ (письмо, пропуск, дневник, долговая расписка, донос).
     Хранится в Архиве для быстрого доступа.
     
-    ----------------------------------------------------------------------
-    БУДУЩИЕ СПЕЦИФИЧНЫЕ АТРИБУТЫ (пока не реализованы, просто идеи):
-    ----------------------------------------------------------------------
-    - lore_id (str): ID текста в архиве игры (для открытия окна лора).
-    - is_forged (bool): Подделан ли документ (влияет на проверку NPC).
-    - is_sealed (bool): Запечатан ли (нельзя прочитать без нарушения печати).
-    - author (str): Автор документа (может влиять на репутацию).
-    - recipient (str): Предназначен конкретному NPC (можно передать).
-    
-    ----------------------------------------------------------------------
-    БУДУЩИЕ СПЕЦИФИЧНЫЕ МЕТОДЫ (идеи на потом):
-    ----------------------------------------------------------------------
-    - read(actor): Открывает окно архива с текстом документа.
-    - present_to(actor, npc): Предъявить документ NPC (пропуск стражнику).
-    - forge(actor, tool_item): Подделать документ (нужен письменный прибор).
-    - seal() / break_seal(): Работа с печатью.
+    Специфичные атрибуты:
+        text (str): Текст документа (читается из items.json).
+                    Поддерживает \n для разделения абзацев.
     """
     
     def __init__(self, item_id: str, quantity: int = 1):
@@ -36,13 +29,26 @@ class DocumentItem(Item):
                 f"DocumentItem: создан для '{item_id}' с категорией {self.category.value}, "
                 f"ожидалось 'document'"
             )
+        
+        # Читаем текст документа из items.json
+        item_data = ItemData()
+        props = item_data.get(item_id) or {}
+        self.text = props.get("text", "")
+        
+        if not self.text:
+            log.warning(f"DocumentItem: у документа '{item_id}' отсутствует поле 'text'")
     
-    def use(self, actor, target=None):
+    def use(self, engine):
         """
-        Базовое использование — чтение документа.
-        TODO: открыть окно архива/лора с текстом.
+        Чтение документа: открывает модальное окно с текстом.
+        
+        Аргументы:
+            engine: GameEngine (нужен для доступа к document_viewer).
         """
-        log.info(f"DocumentItem: {actor.name} читает '{self.name}'")
-        # Будущая логика:
-        # self.engine.ui.show_lore(self.lore_id)
-        pass
+        log.info(f"DocumentItem: {engine.game_state.player.name} читает '{self.name}'")
+        
+        # Открываем окно просмотра документа
+        if hasattr(engine, 'document_viewer'):
+            engine.document_viewer.open(self.text, self.name)
+        else:
+            log.error("DocumentItem: у GameEngine нет document_viewer")
