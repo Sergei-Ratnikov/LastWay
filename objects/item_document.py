@@ -18,9 +18,30 @@ class DocumentItem(Item):
     Специфичные атрибуты:
         text (str): Текст документа (читается из items.json).
                     Поддерживает \n для разделения абзацев.
+                    
+    ----------------------------------------------------------------------
+    БУДУЩИЕ СПЕЦИФИЧНЫЕ АТРИБУТЫ (идеи на потом):
+    ----------------------------------------------------------------------
+    - lore_id (str): ID текста в архиве игры.
+    - is_forged (bool): Подделан ли документ.
+    - is_sealed (bool): Запечатан ли.
+    - author (str): Автор документа.
+    - recipient (str): Предназначен конкретному NPC.
     """
     
-    def __init__(self, item_id: str, quantity: int = 1):
+    # FIX: добавлен параметр text, чтобы Item Creator автоматически
+    # увидел это поле через inspect.signature() и показал его в форме
+    # редактирования для категории "document".
+    def __init__(self, item_id: str, quantity: int = 1, text: str = ""):
+        """
+        Создаёт экземпляр документа.
+        
+        Аргументы:
+            item_id (str): ID предмета из items.json.
+            quantity (int): Количество в стаке.
+            text (str): Текст документа (параметр нужен для Item Creator).
+                        Реальное значение читается из items.json ниже.
+        """
         super().__init__(item_id, quantity)
         
         # Защита от дурака: проверяем, что категория правильная
@@ -30,7 +51,9 @@ class DocumentItem(Item):
                 f"ожидалось 'document'"
             )
         
-        # Читаем текст документа из items.json
+        # Читаем текст документа из items.json.
+        # Параметр text в сигнатуре нужен только для Item Creator;
+        # реальное значение всегда берётся из JSON.
         item_data = ItemData()
         props = item_data.get(item_id) or {}
         self.text = props.get("text", "")

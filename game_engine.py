@@ -51,9 +51,6 @@ class GameEngine:
         self.game_state.player.x = player_x
         self.game_state.player.y = player_y
 
-        # FIX: убрана мёртвая проверка `if not player.player_class` —
-        # Player.__init__ всегда ставит "Идальго" по умолчанию.
-
         # Синхронизируем лимит веса инвентаря с классом игрока
         self.game_state.inventory.max_weight = self.game_state.player.max_weight
 
@@ -93,10 +90,20 @@ class GameEngine:
         from ui.loot_menu_ui import LootMenu
         self.loot_menu = LootMenu(self)
 
+        # FIX: добавляем DocumentViewer для чтения документов
+        from ui.document_viewer_ui import DocumentViewer
+        self.document_viewer = DocumentViewer()
+
+        # FIX: добавляем DocumentViewer для чтения документов
+        from ui.document_viewer_ui import DocumentViewer
+        self.document_viewer = DocumentViewer()
+        
+        # FIX: индекс выбранного предмета в инвентаре (для навигации стрелками)
+        self.inventory_selected_index = 0
+
     # -------------------------------------------------------------------------
     # ОСНОВНОЙ ЦИКЛ
     # -------------------------------------------------------------------------
-
     def run(self) -> str:
         while self.running:
             current_time = pygame.time.get_ticks()
@@ -163,6 +170,13 @@ class GameEngine:
                 # Прочие события при открытом меню сохранений — игнорируем
                 continue
 
+            # --- ОКНО ПРОСМОТРА ДОКУМЕНТОВ ---
+            # Пока окно открыто, слушаем только его клавиши.
+            if self.document_viewer.is_active:
+                if self.document_viewer.handle_event(event):
+                    continue  # Событие обработано, дальше не передаём
+                continue
+
             # --- ОКНО ОБМЕНА (LOOT MENU) ---
             # Пока окно обмена открыто, слушаем только его клавиши.
             if self.loot_menu.is_active:
@@ -171,8 +185,8 @@ class GameEngine:
                         continue
                 continue
 
+
             # --- ИНВЕНТАРЬ ---
-            # Пока инвентарь открыт, слушаем только его клавиши.
             if self.inventory_open:
                 if event.type == pygame.KEYDOWN:
                     # Закрытие инвентаря
@@ -196,9 +210,22 @@ class GameEngine:
                     if event.key == pygame.K_DELETE:
                         self._drop_selected_item()
                         continue
-                
+                    
+                    # Чтение документа (Enter)
+                    if event.key == pygame.K_RETURN:
+                        items = self.game_state.inventory.get_items()
+                        if items and self.inventory_selected_index < len(items):
+                            item = items[self.inventory_selected_index]
+                            from objects.item import ItemCategory
+                            if item.category == ItemCategory.DOCUMENT:
+                                item.use(self)
+                                self.inventory_open = False
+                                continue
+                        continue
+    
                 # Прочие события при открытом инвентаре — игнорируем
                 continue
+
 
             # --- ОБЫЧНЫЙ ВВОД (никакие панели не открыты) ---
             command = self.input_handler.handle_event(event, self.game_state, self.current_map)
@@ -431,7 +458,8 @@ class GameEngine:
     # -------------------------------------------------------------------------
     def update(self, current_time: int):
         if (self.game_state.dialog_active or self.inventory_open 
-                or self.save_menu_open or self.loot_menu.is_active):
+                or self.save_menu_open or self.loot_menu.is_active
+                or self.document_viewer.is_active):
             return
 
         # Движение игрока
@@ -567,7 +595,6 @@ class GameEngine:
     # =============================================================================
     # ОТРИСОВКА
     # =============================================================================
-
     def render(self):
         """
         Отрисовка кадра.
@@ -578,6 +605,8 @@ class GameEngine:
         self.renderer.render(self.screen)
         # FIX: Окно обмена рисуется поверх всего (как модальное окно)
         self.loot_menu.render(self.screen)
+        # FIX: Окно просмотра документа рисуется поверх всего
+        self.document_viewer.render(self.screen)
 
     def _show_message(self, text):
         self.temp_message = text
