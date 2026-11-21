@@ -16,6 +16,19 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
 
+
+# ---------------------------------------------------------------------------
+# НАСТРОЙКА ПУТЕЙ (ДОЛЖНА БЫТЬ ПЕРЕД ИМПОРТАМИ ИЗ ПРОЕКТА!)
+# ---------------------------------------------------------------------------
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+# ---------------------------------------------------------------------------
+# ИМПОРТЫ ИЗ ПРОЕКТА (теперь Python знает, где искать папку objects)
+# ---------------------------------------------------------------------------
+from objects.item import PaperDollSlot
+
+
 # ---------------------------------------------------------------------------
 # НАСТРОЙКА ПУТЕЙ
 # ---------------------------------------------------------------------------
@@ -26,6 +39,19 @@ if PROJECT_ROOT not in sys.path:
 ITEMS_JSON_PATH = os.path.join(PROJECT_ROOT, "data", "items.json")
 OBJECTS_DIR = os.path.join(PROJECT_ROOT, "objects")
 
+# ---------------------------------------------------------------------------
+# ПОЛЯ С ОГРАНИЧЕННЫМ НАБОРОМ ЗНАЧЕНИЙ (ВЫПАДАЮЩИЕ СПИСКИ)
+# ---------------------------------------------------------------------------
+# Маппинг: имя поля → список допустимых значений.
+# Для таких полей в форме автоматически создаётся Combobox вместо Entry.
+# Расширяется просто: добавил строку — и поле стало выпадающим.
+ENUM_FIELDS = {
+    "slot": [slot.value for slot in PaperDollSlot],  # clothing, patch, weapon, tool, ring, amulet
+    # В будущем можно добавить:
+    # "attack_type": ["piercing", "slashing", "blunt"],
+    # "ammo_type": ["bolt", "arrow", "bullet"],
+    # "weapon_class": ["dagger", "sword", "crossbow", "staff"],
+}
 
 # ---------------------------------------------------------------------------
 # ДИНАМИЧЕСКОЕ СКАНИРОВАНИЕ КЛАССОВ
@@ -89,10 +115,10 @@ def extract_category_from_class(cls):
     
     return None
 
-
 def get_fields_for_class(cls):
     """
     Извлекает список полей из класса через анализ __init__.
+    Для полей из ENUM_FIELDS помечает тип как 'enum' и сохраняет варианты.
     Возвращает список словарей с описанием полей.
     """
     fields = []
@@ -107,8 +133,14 @@ def get_fields_for_class(cls):
             # Определяем тип поля
             field_type = 'str'  # по умолчанию
             default_value = None
+            enum_values = None
             
-            if param.default != inspect.Parameter.empty:
+            # --- ПРОВЕРКА НА ENUM-ПОЛЕ (выпадающий список) ---
+            if param_name in ENUM_FIELDS:
+                field_type = 'enum'
+                enum_values = ENUM_FIELDS[param_name]
+                default_value = param.default if param.default != inspect.Parameter.empty else enum_values[0]
+            elif param.default != inspect.Parameter.empty:
                 default_value = param.default
                 # Определяем тип по значению по умолчанию
                 if isinstance(default_value, bool):
@@ -124,13 +156,13 @@ def get_fields_for_class(cls):
                 'name': param_name,
                 'type': field_type,
                 'default': default_value,
-                'required': param.default == inspect.Parameter.empty
+                'required': param.default == inspect.Parameter.empty,
+                'enum_values': enum_values,  # Только для type='enum'
             })
     except Exception as e:
         print(f"Предупреждение: не удалось извлечь поля из {cls.__name__}: {e}")
     
     return fields
-
 
 # ---------------------------------------------------------------------------
 # ГЛАВНОЕ ПРИЛОЖЕНИЕ
@@ -415,12 +447,14 @@ class ItemCreatorApp:
         grid_frame.pack(fill=tk.BOTH, expand=True)
         
         # Генерируем поля
+        # Генерируем поля
         row = 0
         for field in fields:
             field_name = field['name']
             field_type = field['type']
             default = field['default']
             required = field['required']
+            enum_values = field.get('enum_values')
             
             label_text = field_name.replace('_', ' ').title()
             if required:
@@ -441,6 +475,11 @@ class ItemCreatorApp:
                 var = tk.DoubleVar(value=default if default is not None else 0.0)
                 widget = ttk.Spinbox(grid_frame, textvariable=var,
                                     from_=-10000.0, to=10000.0, increment=0.1, width=37)
+            elif field_type == 'enum':
+                # --- ВЫПАДАЮЩИЙ СПИСОК ---
+                var = tk.StringVar(value=default if default is not None else enum_values[0])
+                widget = ttk.Combobox(grid_frame, textvariable=var,
+                                      values=enum_values, state="readonly", width=37)
             elif field_type == 'list':
                 var = tk.StringVar(value="" if default is None else ", ".join(default))
                 widget = ttk.Entry(grid_frame, textvariable=var, width=40)
@@ -455,7 +494,7 @@ class ItemCreatorApp:
             widget.grid(row=row, column=1, sticky="ew", padx=5, pady=3)
             self.field_widgets[field_name] = (widget, var, field_type)
             row += 1
-        
+   
         grid_frame.columnconfigure(1, weight=1)
     
     def _refresh_items_list(self):
@@ -544,6 +583,7 @@ class ItemCreatorApp:
             self.category_combobox.set(category)
             self._on_category_changed(None)
         
+
         # Динамические поля
         for field_name, (widget, var, field_type) in self.field_widgets.items():
             value = props.get(field_name)
@@ -554,6 +594,9 @@ class ItemCreatorApp:
                     var.set(int(value))
                 elif field_type == 'float':
                     var.set(float(value))
+                elif field_type == 'enum':
+                    # Для enum-полей значение уже строка, просто устанавливаем
+                    var.set(str(value))
                 elif field_type == 'list':
                     var.set(", ".join(value) if isinstance(value, list) else str(value))
                 else:
@@ -630,9 +673,13 @@ class ItemCreatorApp:
                     item_dict[field_name] = [v.strip() for v in value.split(",")]
                 else:
                     item_dict[field_name] = []
+            elif field_type == 'enum':
+                # Enum-поле — сохраняем как строку (значение из выпадающего списка)
+                item_dict[field_name] = str(value)
             else:
                 item_dict[field_name] = value
-        
+
+
         # Удаляем старый, если меняли ID
         if self.current_editing_id and self.current_editing_id != item_id:
             if self.current_editing_id in self.items_data:
