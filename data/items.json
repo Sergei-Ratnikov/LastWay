@@ -28,6 +28,7 @@
     "gender_restrict": "any",
     "name": "Кинжал",
     "requires_ammo": false,
+    "slot": "weapon",
     "storage_type": "burden",
     "volume": 2,
     "weight": 0.8
@@ -71,6 +72,7 @@
     "equippable": true,
     "gender_restrict": "any",
     "name": "Набор отмычек",
+    "slot": "tool",
     "storage_type": "burden",
     "volume": 1,
     "weight": 0.3
@@ -102,9 +104,11 @@
   "ring_noble": {
     "category": "jewelry",
     "cost": 200,
+    "durability": 100,
     "equippable": true,
     "gender_restrict": "any",
     "name": "Перстень с гербом",
+    "slot": "ring",
     "storage_type": "casket",
     "volume": 1,
     "weight": 0.1
@@ -112,13 +116,11 @@
   "robe_monk": {
     "category": "clothing",
     "cost": 25,
+    "durability": 100,
     "equippable": true,
     "gender_restrict": "any",
     "name": "Ряса монаха",
-    "social_tags": [
-      "clergy",
-      "monk"
-    ],
+    "slot": "clothing",
     "storage_type": "burden",
     "volume": 5,
     "weight": 2.0
@@ -141,6 +143,7 @@
     "gender_restrict": "male",
     "name": "Меч",
     "requires_ammo": false,
+    "slot": "weapon",
     "storage_type": "burden",
     "volume": 1,
     "weight": 1.0

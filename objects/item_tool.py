@@ -1,6 +1,11 @@
 # objects/item_tool.py
+# =============================================================================
+# ИНСТРУМЕНТЫ (ToolItem)
+# Отмычки, фонарь, верёвка. Используются для взлома, ремонта, побега.
+# =============================================================================
 
 from objects.item import Item, ItemCategory, PaperDollSlot
+from world.item_data import ItemData
 from logger import log
 
 
@@ -10,25 +15,20 @@ class ToolItem(Item):
     Используются для взлома, ремонта, допроса, побега.
     Хранятся в Поклаже, могут надеваться на слот TOOL.
     
-    ----------------------------------------------------------------------
-    БУДУЩИЕ СПЕЦИФИЧНЫЕ АТРИБУТЫ:
-    ----------------------------------------------------------------------
-    - tool_type (str): "lockpick", "lantern", "rope", "crowbar", "writing_kit".
-    - efficiency (float): Модификатор успеха действия (0.0 - 2.0).
-    - light_radius (int): Для фонаря — радиус освещения.
-    - fuel_left (int): Для фонаря — сколько масла осталось.
-    - max_uses (int): Для отмычек — сколько взломов выдержит.
-    
-    ----------------------------------------------------------------------
-    БУДУЩИЕ СПЕЦИФИЧНЫЕ МЕТОДЫ:
-    ----------------------------------------------------------------------
-    - use_on(actor, target): Взлом, связывание, освещение.
-    - repair(target_item): Починить другой предмет.
-    - combine_with(other_tool): Объединить (верёвка + крюк = кошка).
-    - get_success_chance(actor, target) -> float: Шанс успеха.
+    Специфичные атрибуты:
+        slot (PaperDollSlot): Слот экипировки (TOOL).
     """
     
-    def __init__(self, item_id: str, quantity: int = 1):
+    def __init__(self, item_id: str, quantity: int = 1, slot: str = "tool"):
+        """
+        Создаёт экземпляр инструмента.
+        
+        Аргументы:
+            item_id (str): ID предмета из items.json.
+            quantity (int): Количество в стаке.
+            slot (str): Слот экипировки ("tool").
+                        Параметр нужен для ItemCreator.
+        """
         super().__init__(item_id, quantity)
         
         if self.category != ItemCategory.TOOL:
@@ -36,9 +36,19 @@ class ToolItem(Item):
                 f"ToolItem: создан для '{item_id}' с категорией {self.category.value}, "
                 f"ожидалось 'tool'"
             )
+        
+        # Читаем слот из items.json
+        item_data = ItemData()
+        props = item_data.get(item_id) or {}
+        slot_str = props.get("slot", slot)
+        
+        try:
+            self.slot = PaperDollSlot(slot_str)
+        except ValueError:
+            log.warning(f"ToolItem: неизвестный слот '{slot_str}' для {item_id}, использую TOOL")
+            self.slot = PaperDollSlot.TOOL
     
     def use(self, actor, target=None):
         """Инструмент требует цель для применения."""
         log.info(f"ToolItem: {actor.name} готовит '{self.name}' к работе")
-        # Будущая логика: выбор цели на карте или в инвентаре.
         pass

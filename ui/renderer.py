@@ -121,7 +121,6 @@ class Renderer:
         self._render_player(screen)
         self._render_hud(screen)
         self._render_dialog(screen)
-        self._render_inventory(screen)
         self._render_temp_message(screen)
         self._render_save_menu(screen)
         self._render_hints(screen)
@@ -412,73 +411,6 @@ class Renderer:
         if not game_state.dialog_options:
             hint = font.render("Нажми E или ESC, чтобы продолжить", True, (150, 150, 150))
             screen.blit(hint, (55, HEIGHT - 85))
-
-    # =========================================================================
-    # ИНВЕНТАРЬ
-    # =========================================================================
-    def _render_inventory(self, screen):
-        """Отрисовка окна инвентаря с подсветкой выбранного предмета."""
-        if not self.engine.inventory_open:
-            return
-        
-        surf = pygame.Surface((WIDTH - 200, HEIGHT - 200))
-        surf.set_alpha(230)
-        surf.fill(BLACK)
-        screen.blit(surf, (100, 100))
-        pygame.draw.rect(screen, WHITE, (100, 100, WIDTH - 200, HEIGHT - 200), 3)
-        
-        title_font = pygame.font.Font(None, 36)
-        screen.blit(title_font.render("Инвентарь", True, YELLOW), (120, 120))
-        
-        item_font = pygame.font.Font(None, 24)
-        
-        items = self.engine.game_state.inventory.get_items()
-        selected_index = self.engine.inventory_selected_index
-        
-        if not items:
-            screen.blit(item_font.render("(пусто)", True, (150, 150, 150)), (120, 170))
-        else:
-            for i, item in enumerate(items):
-                if i >= 15:
-                    break
-                
-                row_y = 170 + i * 30
-                is_selected = (i == selected_index)
-                
-                # Подсветка выбранной строки
-                if is_selected:
-                    highlight_rect = pygame.Rect(110, row_y - 5, WIDTH - 220, 28)
-                    pygame.draw.rect(screen, (60, 60, 20), highlight_rect)
-                
-                # Маркер выбора
-                marker = "▶ " if is_selected else "  "
-                
-                # Формат: "▶ Ключ от часовни    0.1 кг"
-                display_text = f"{marker}{item.name}"
-                if item.quantity > 1:
-                    display_text += f" (x{item.quantity})"
-                
-                screen.blit(item_font.render(display_text, True, WHITE), (120, row_y))
-                
-                # Вес справа
-                weight_text = f"{item.weight * item.quantity:.2f} кг"
-                weight_surf = item_font.render(weight_text, True, (150, 150, 150))
-                screen.blit(weight_surf, (WIDTH - 120 - weight_surf.get_width(), row_y))
-        
-        # Показ текущего веса
-        inv = self.engine.game_state.inventory
-        weight_text = f"Вес: {inv.get_total_weight():.1f} / {inv.max_weight:.1f} кг"
-        screen.blit(item_font.render(weight_text, True, WHITE), (120, HEIGHT - 160))
-        
-        # Подсказки управления
-        screen.blit(
-            item_font.render("Нажми I, чтобы закрыть", True, (150, 150, 150)), 
-            (120, HEIGHT - 130)
-        )
-        screen.blit(
-            item_font.render("↑ ↓ — выбор   |   Delete — выбросить под ноги", True, (150, 150, 150)), 
-            (120, HEIGHT - 100)
-        )
 
     # =========================================================================
     # ВРЕМЕННОЕ СООБЩЕНИЕ (всплывающие уведомления)

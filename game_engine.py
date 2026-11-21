@@ -65,9 +65,8 @@ class GameEngine:
         # Состояние игры
         self.running = True
         self.exit_code = None
-        self.inventory_open = False
-        self.inventory_selected_index = 0  # FIX: индекс выбранного предмета в инвентаре
 
+        
         # Ввод
         self.input_handler = InputHandler()
 
@@ -87,13 +86,10 @@ class GameEngine:
         # Системы
         self.renderer = Renderer(self)
         self.movement_system = MovementSystem(self)
-        from ui.loot_menu_ui import LootMenu
-        self.loot_menu = LootMenu(self)
 
-        # FIX: добавляем DocumentViewer для чтения документов
-        from ui.document_viewer_ui import DocumentViewer
-        self.document_viewer = DocumentViewer()
-
+        from ui.inventory_ui import InventoryMenu
+        self.inventory_menu = InventoryMenu(self)
+        
         # FIX: добавляем DocumentViewer для чтения документов
         from ui.document_viewer_ui import DocumentViewer
         self.document_viewer = DocumentViewer()
@@ -177,55 +173,11 @@ class GameEngine:
                     continue  # Событие обработано, дальше не передаём
                 continue
 
-            # --- ОКНО ОБМЕНА (LOOT MENU) ---
-            # Пока окно обмена открыто, слушаем только его клавиши.
-            if self.loot_menu.is_active:
-                if event.type == pygame.KEYDOWN:
-                    if self.loot_menu.handle_event(event):
-                        continue
+            # --- ИНВЕНТАРЬ (заменяет старый LootMenu и Inventory) ---
+            if self.inventory_menu.is_active:
+                if self.inventory_menu.handle_event(event):
+                    continue
                 continue
-
-
-            # --- ИНВЕНТАРЬ ---
-            if self.inventory_open:
-                if event.type == pygame.KEYDOWN:
-                    # Закрытие инвентаря
-                    if event.key == pygame.K_i or event.key == pygame.K_ESCAPE:
-                        self.inventory_open = False
-                        continue
-                    
-                    # Навигация по списку
-                    if event.key == pygame.K_UP:
-                        self.inventory_selected_index = max(0, self.inventory_selected_index - 1)
-                        continue
-                    if event.key == pygame.K_DOWN:
-                        items = self.game_state.inventory.get_items()
-                        self.inventory_selected_index = min(
-                            len(items) - 1, 
-                            self.inventory_selected_index + 1
-                        )
-                        continue
-                    
-                    # Выброс предмета под ноги
-                    if event.key == pygame.K_DELETE:
-                        self._drop_selected_item()
-                        continue
-                    
-                    # Чтение документа (Enter)
-                    if event.key == pygame.K_RETURN:
-                        items = self.game_state.inventory.get_items()
-                        if items and self.inventory_selected_index < len(items):
-                            item = items[self.inventory_selected_index]
-                            from objects.item import ItemCategory
-                            if item.category == ItemCategory.DOCUMENT:
-                                item.use(self)
-                                self.inventory_open = False
-                                continue
-                        continue
-    
-                # Прочие события при открытом инвентаре — игнорируем
-                continue
-
 
             # --- ОБЫЧНЫЙ ВВОД (никакие панели не открыты) ---
             command = self.input_handler.handle_event(event, self.game_state, self.current_map)
@@ -306,23 +258,11 @@ class GameEngine:
                     self.running = False
 
             elif command == "open_inventory":
-                self.inventory_open = not self.inventory_open
-                log.info(f"Инвентарь: {'открыт' if self.inventory_open else 'закрыт'}")
-                
-                # ДИАГНОСТИКА: при открытии печатаем весь инвентарь с типами объектов
-                if self.inventory_open:
-                    inv = self.game_state.inventory
-                    log.info(f"=== ДАМП ИНВЕНТАРЯ ({len(inv.items)} предметов) ===")
-                    for i, item in enumerate(inv.items):
-                        log.info(
-                            f"  [{i}] {item.name} (ID: {item.id}) — "
-                            f"класс: {type(item).__name__}, "
-                            f"категория: {item.category.value}, "
-                            f"хранение: {item.storage_type.value}, "
-                            f"объект: {id(item)}"
-                        )
-                    log.info(f"=== КОНЕЦ ДАМПА (вес: {inv.get_total_weight():.1f}/{inv.max_weight:.1f} кг) ===")
-
+                # Открываем InventoryMenu без источника (режим "inventory")
+                if self.inventory_menu.is_active:
+                    self.inventory_menu.close()
+                else:
+                    self.inventory_menu.open()
 
             elif command == "context_menu":
                 pass
@@ -426,16 +366,16 @@ class GameEngine:
             if not container.is_open:
                 container.open()
                 log.info(f"КОНТЕЙНЕР: {container.id} открыт")
-            # Открываем окно обмена (вместо автозабора)
-            self.loot_menu.open(container, "container")
+            # Открываем окно обмена
+            self.inventory_menu.open(container, "container")
+            
             return
 
         # 3. Дроп
         drop = self.current_map.get_drop_at(x, y)
         if drop:
-            # Открываем окно обмена (вместо автозабора)
-            # Пустой дроп будет автоматически удалён при закрытии LootMenu.close()
-            self.loot_menu.open(drop, "drop")
+            # Открываем окно обмена
+            self.inventory_menu.open(drop, "drop")
             return
 
         # 4. Дверь
@@ -456,9 +396,11 @@ class GameEngine:
     # -------------------------------------------------------------------------
     # ОБНОВЛЕНИЕ
     # -------------------------------------------------------------------------
+
     def update(self, current_time: int):
-        if (self.game_state.dialog_active or self.inventory_open 
-                or self.save_menu_open or self.loot_menu.is_active
+        if (self.game_state.dialog_active 
+                or self.save_menu_open 
+                or self.inventory_menu.is_active
                 or self.document_viewer.is_active):
             return
 
@@ -592,21 +534,19 @@ class GameEngine:
         self.pending_target_cell = None
         self.pending_npc_id = None
 
+
     # =============================================================================
     # ОТРИСОВКА
     # =============================================================================
     def render(self):
-        """
-        Отрисовка кадра.
-        Делегирует карту и UI рендереру, затем рисует LootMenu поверх.
-        """
+        """Отрисовка кадра."""
         self.screen.fill(BLACK)
-        # Вся отрисовка карты и базового UI
         self.renderer.render(self.screen)
-        # FIX: Окно обмена рисуется поверх всего (как модальное окно)
-        self.loot_menu.render(self.screen)
-        # FIX: Окно просмотра документа рисуется поверх всего
+        # FIX: Инвентарь (заменил LootMenu)
+        self.inventory_menu.render(self.screen)
+        # Документы
         self.document_viewer.render(self.screen)
+
 
     def _show_message(self, text):
         self.temp_message = text

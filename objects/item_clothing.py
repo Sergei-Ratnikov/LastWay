@@ -1,34 +1,35 @@
 # objects/item_clothing.py
+# =============================================================================
+# ОДЕЖДА (ClothingItem)
+# Рясы, бригантины, платья. Меняет социальные теги и доступ.
+# =============================================================================
 
 from objects.item import Item, ItemCategory, PaperDollSlot
+from world.item_data import ItemData
 from logger import log
 
 
 class ClothingItem(Item):
     """
-    Одежда и нашивки (ряса монаха, бригантина, траурное платье, знак инквизиции).
-    Меняет НЕ очки брони, а социальные теги и доступ к диалогам/локациям.
+    Одежда и нашивки.
+    Меняет социальные теги и доступ к диалогам/локациям.
     Хранится в Поклаже, надевается на слоты CLOTHING или PATCH.
     
-    ----------------------------------------------------------------------
-    БУДУЩИЕ СПЕЦИФИЧНЫЕ АТРИБУТЫ:
-    ----------------------------------------------------------------------
-    - slot (PaperDollSlot): CLOTHING или PATCH.
-    - social_tags (list[str]): ["clergy", "monk", "noble", "inquisition"].
-    - condition (str): "clean", "dirty", "torn", "bloodied" (влияет на реакцию).
-    - warmth (int): Утепление (для системы холода в будущем).
-    - noise_modifier (float): Модификатор шума при движении.
-    
-    ----------------------------------------------------------------------
-    БУДУЩИЕ СПЕЦИФИЧНЫЕ МЕТОДЫ:
-    ----------------------------------------------------------------------
-    - equip(actor): Надеть на слот, обновить социальные теги актёра.
-    - unequip(actor): Снять, убрать теги.
-    - repair(actor, tool): Починить (нужен инструмент).
-    - dye(actor, ingredient): Покрасить (нужен ингредиент-краска).
+    Специфичные атрибуты:
+        slot (PaperDollSlot): Слот экипировки (CLOTHING или PATCH).
     """
     
-    def __init__(self, item_id: str, quantity: int = 1):
+    def __init__(self, item_id: str, quantity: int = 1, slot: str = "clothing"):
+        """
+        Создаёт экземпляр одежды.
+        
+        Аргументы:
+            item_id (str): ID предмета из items.json.
+            quantity (int): Количество в стаке.
+            slot (str): Слот экипировки ("clothing" или "patch").
+                        Параметр нужен для ItemCreator.
+                        Реальное значение читается из items.json ниже.
+        """
         super().__init__(item_id, quantity)
         
         if self.category != ItemCategory.CLOTHING:
@@ -36,9 +37,19 @@ class ClothingItem(Item):
                 f"ClothingItem: создан для '{item_id}' с категорией {self.category.value}, "
                 f"ожидалось 'clothing'"
             )
+        
+        # Читаем слот из items.json
+        item_data = ItemData()
+        props = item_data.get(item_id) or {}
+        slot_str = props.get("slot", slot)
+        
+        try:
+            self.slot = PaperDollSlot(slot_str)
+        except ValueError:
+            log.warning(f"ClothingItem: неизвестный слот '{slot_str}' для {item_id}, использую CLOTHING")
+            self.slot = PaperDollSlot.CLOTHING
     
     def use(self, actor, target=None):
         """Использование одежды = надеть/снять."""
         log.info(f"ClothingItem: {actor.name} примеряет '{self.name}'")
-        # Будущая логика: экипировка на Paper Doll.
         pass

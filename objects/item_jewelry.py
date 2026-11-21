@@ -1,6 +1,11 @@
 # objects/item_jewelry.py
+# =============================================================================
+# УКРАШЕНИЯ (JewelryItem)
+# Перстни, амулеты, кресты. Надеваются для демонстрации статуса.
+# =============================================================================
 
 from objects.item import Item, ItemCategory, PaperDollSlot
+from world.item_data import ItemData
 from logger import log
 
 
@@ -10,25 +15,20 @@ class JewelryItem(Item):
     Надеваются для демонстрации статуса, принадлежности.
     Хранятся в Ларце, надеваются на слоты RING или AMULET.
     
-    ----------------------------------------------------------------------
-    БУДУЩИЕ СПЕЦИФИЧНЫЕ АТРИБУТЫ:
-    ----------------------------------------------------------------------
-    - slot (PaperDollSlot): RING или AMULET.
-    - social_tags (list[str]): ["noble", "inquisition", "guild_member"].
-    - is_cursed (bool): Проклятое (нельзя снять без ритуала).
-    - magic_effect (str): Магический эффект (редкость в нашем сеттинге).
-    - prestige (int): Очки престижа (для дворянского двора).
-    
-    ----------------------------------------------------------------------
-    БУДУЩИЕ СПЕЦИФИЧНЫЕ МЕТОДЫ:
-    ----------------------------------------------------------------------
-    - equip(actor): Надеть, обновить социальные теги актёра.
-    - unequip(actor): Снять, убрать теги.
-    - appraise(actor) -> int: Оценить (с учётом престижа).
-    - consecrate(actor, location): Освятить (для крестов).
+    Специфичные атрибуты:
+        slot (PaperDollSlot): Слот экипировки (RING или AMULET).
     """
     
-    def __init__(self, item_id: str, quantity: int = 1):
+    def __init__(self, item_id: str, quantity: int = 1, slot: str = "ring"):
+        """
+        Создаёт экземпляр украшения.
+        
+        Аргументы:
+            item_id (str): ID предмета из items.json.
+            quantity (int): Количество в стаке.
+            slot (str): Слот экипировки ("ring" или "amulet").
+                        Параметр нужен для ItemCreator.
+        """
         super().__init__(item_id, quantity)
         
         if self.category != ItemCategory.JEWELRY:
@@ -36,9 +36,19 @@ class JewelryItem(Item):
                 f"JewelryItem: создан для '{item_id}' с категорией {self.category.value}, "
                 f"ожидалось 'jewelry'"
             )
+        
+        # Читаем слот из items.json
+        item_data = ItemData()
+        props = item_data.get(item_id) or {}
+        slot_str = props.get("slot", slot)
+        
+        try:
+            self.slot = PaperDollSlot(slot_str)
+        except ValueError:
+            log.warning(f"JewelryItem: неизвестный слот '{slot_str}' для {item_id}, использую RING")
+            self.slot = PaperDollSlot.RING
     
     def use(self, actor, target=None):
         """Использование украшения = надеть/снять."""
         log.info(f"JewelryItem: {actor.name} примеряет '{self.name}'")
-        # Будущая логика: экипировка на Paper Doll.
         pass

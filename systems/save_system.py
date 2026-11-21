@@ -37,13 +37,17 @@ class SaveSystem:
         
         # Данные игрока
         player_data = game_state.player.to_dict()
-        # ВАЖНО: сериализуем инвентарь как список словарей (не строки ID)
+        # Сериализуем инвентарь как список словарей
         player_data["inventory"] = game_state.inventory.to_dict_list()
+        # FIX: сериализуем экипировку
+        player_data["equipped"] = game_state.inventory.equipped_to_dict()
         player_data["humanity"] = game_state.humanity
         player_data["days_left"] = game_state.days_left
         log.info(f"СБОР: игрок на ({player_data['x']},{player_data['y']}), "
-                 f"предметов в инвентаре: {len(player_data['inventory'])}")
-        
+                 f"предметов в инвентаре: {len(player_data['inventory'])}, "
+                 f"экипировано: {len(player_data['equipped'])}")
+
+
         # Данные локации
         location_data = {
             "location_id": current_map.location_id,
@@ -164,17 +168,22 @@ class SaveSystem:
         game_state.player = Player.from_dict(data["player"])
         game_state.humanity = data["player"].get("humanity", 50)
         game_state.days_left = data["player"].get("days_left", 14)
-        
-        # ВАЖНО: загружаем инвентарь из списка словарей (создаём объекты Item)
+        # Загружаем инвентарь из списка словарей
         inventory_data = data["player"].get("inventory", [])
         game_state.inventory.load_from_dict_list(inventory_data)
+        # FIX: загружаем экипировку
+        equipped_data = data["player"].get("equipped", {})
+        game_state.inventory.load_equipped_from_dict(equipped_data)
+        
         game_state.inventory.max_weight = game_state.player.max_weight
         
         game_state.location = location_data["location_id"]
         log.info(f"ЗАГРУЗКА: игрок на ({game_state.player.x},{game_state.player.y}), "
                  f"класс={game_state.player.player_class}, "
-                 f"предметов в инвентаре={len(game_state.inventory.items)}")
-        
+                 f"предметов в инвентаре={len(game_state.inventory.items)}, "
+                 f"экипировано={len(game_state.inventory.equipped)}")
+
+
         # --- 2.1. ВОССТАНАВЛИВАЕМ ФЛАГИ ---
         game_state.flags = dict(data.get("flags", {}))
         log.info(f"ЗАГРУЗКА: флаги восстановлены: {game_state.flags}")
