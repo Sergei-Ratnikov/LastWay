@@ -20,6 +20,18 @@
     "volume": 1,
     "weight": 0.05
   },
+  "crowbar_01": {
+    "category": "tool",
+    "cost": 5,
+    "durability": 100,
+    "equippable": true,
+    "gender_restrict": "male",
+    "name": "Ломик",
+    "slot": "tool",
+    "storage_type": "burden",
+    "volume": 1,
+    "weight": 0.5
+  },
   "dagger_01": {
     "category": "weapon",
     "cost": 15,
@@ -157,6 +169,6 @@
     "name": "Деревянная лошадка",
     "storage_type": "casket",
     "volume": 3,
-    "weight": 0.4
+    "weight": 0.1
   }
 }

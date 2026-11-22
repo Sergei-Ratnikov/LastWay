@@ -1,7 +1,0 @@
-{
-  "name": "Карлос",
-  "movement": "follow", 
-  "move_delay_ms": 800,
-  "follow_target": "001_002", 
-  "dialog_id": "001_003"
-}

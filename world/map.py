@@ -17,6 +17,7 @@ from entities.animal import Animal
 from objects.item import create_item
 from objects.container import Container
 from objects.drop import ItemDrop
+from world.actor_data import ActorData
 
 
 class Map:
@@ -35,7 +36,7 @@ class Map:
         self.player_start = (0, 0)
         self.tile_data = TileData()
         self.load()
-    
+
     def load(self):
         """Загружает данные локации из JSON и создаёт объекты сущностей."""
         data = self.location_manager.get_location_data(self.location_id)
@@ -44,34 +45,29 @@ class Map:
         self.tiles = data.get("tiles", [])
         
         # --- NPC ---
+        # Данные NPC берутся из data/actors.json (единый справочник),
+        # позиции — из location.json (список {id, x, y})
+        actor_data = ActorData()
         npc_refs = data.get("npcs", [])
         for npc_ref in npc_refs:
             npc_id = npc_ref.get("npc_id") or npc_ref.get("id")
-            npc_path = os.path.join(
-                self.location_manager.get_location_path(self.location_id),
-                "npcs",
-                f"{npc_id}.json"
-            )
-            try:
-                with open(npc_path, "r", encoding="utf-8") as f:
-                    npc_data = json.load(f)
-            except Exception as e:
-                log.warning(f"Ошибка загрузки NPC {npc_id}: {e}")
+            x = npc_ref.get("x", 0)
+            y = npc_ref.get("y", 0)
+            
+            npc = NPC.from_actor_data(npc_id, x, y)
+            if npc is None:
+                log.warning(f"MAP: NPC '{npc_id}' не найден в actors.json, пропускаю")
                 continue
-            npc = NPC(
-                npc_id=npc_id,
-                name=npc_data.get("name", "Незнакомец"),
-                x=npc_ref.get("x", 0),
-                y=npc_ref.get("y", 0),
-                dialog_id=npc_data.get("dialog_id", npc_id),
-                gender=npc_data.get("gender", "male")
-            )
-            npc.movement = npc_data.get("movement", "stationary")
-            npc.move_delay_ms = npc_data.get("move_delay_ms", 1000)
-            npc.patrol_points = npc_data.get("patrol_points", [])
-            npc.follow_target = npc_data.get("follow_target", None)
+            
+            # Локальные overrides из location.json (если нужны)
+            if "move_delay_ms" in npc_ref:
+                npc.move_delay_ms = npc_ref["move_delay_ms"]
+            if "patrol_points" in npc_ref:
+                npc.patrol_points = npc_ref["patrol_points"]
+            
             self.npcs.append(npc)
-        
+
+
         # --- КОНТЕЙНЕРЫ ---
         # ВАЖНО: превращаем списки ID предметов в объекты Item через create_item()
         for container_data in data.get("containers", []):
