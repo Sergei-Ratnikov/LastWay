@@ -1,0 +1,16 @@
+{
+  "id_con_001_table": {
+    "access_side": "south",
+    "height": 1,
+    "locked": false,
+    "name": "Стол",
+    "width": 2
+  },
+  "id_con_002": {
+    "access_side": "west",
+    "height": 1,
+    "locked": true,
+    "name": "Сундук",
+    "width": 1
+  }
+}

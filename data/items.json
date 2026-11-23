@@ -1,174 +1,25 @@
 {
-  "apple": {
-    "category": "consumable",
-    "cost": 2,
-    "equippable": false,
-    "gender_restrict": "any",
-    "name": "Яблоко",
-    "storage_type": "burden",
-    "volume": 1,
-    "weight": 0.15
-  },
-  "bolt": {
-    "category": "consumable",
-    "cost": 1,
-    "durability": 100,
-    "equippable": false,
-    "gender_restrict": "any",
-    "name": "Арбалетный болт",
-    "storage_type": "burden",
-    "volume": 1,
-    "weight": 0.05
-  },
-  "crowbar_01": {
-    "category": "tool",
-    "cost": 5,
-    "durability": 100,
-    "equippable": true,
-    "gender_restrict": "male",
-    "name": "Ломик",
-    "slot": "tool",
-    "storage_type": "burden",
-    "volume": 1,
-    "weight": 0.5
-  },
-  "dagger_01": {
-    "category": "weapon",
-    "cost": 15,
-    "durability": 60,
-    "equippable": true,
-    "gender_restrict": "any",
-    "name": "Кинжал",
-    "requires_ammo": false,
-    "slot": "weapon",
-    "storage_type": "burden",
-    "volume": 2,
-    "weight": 0.8
-  },
-  "doc_001": {
+  "id_inv_doc_001_letter": {
     "category": "document",
     "cost": 0,
     "durability": 100,
     "equippable": false,
     "gender_restrict": "any",
-    "name": "Записка",
+    "name": "Письмо",
     "storage_type": "archive",
-    "text": "Корона в опасности!",
-    "volume": 1,
-    "weight": 0.1
-  },
-  "herb_mint": {
-    "category": "ingredient",
-    "cost": 3,
-    "equippable": false,
-    "gender_restrict": "any",
-    "name": "Мята",
-    "storage_type": "burden",
-    "volume": 1,
-    "weight": 0.05
-  },
-  "key_01": {
-    "category": "key",
-    "cost": 5,
-    "equippable": false,
-    "gender_restrict": "any",
-    "name": "Ключ от часовни",
-    "storage_type": "archive",
-    "volume": 1,
-    "weight": 0.1
-  },
-  "lockpick_set": {
-    "category": "tool",
-    "cost": 50,
-    "durability": 100,
-    "equippable": true,
-    "gender_restrict": "any",
-    "name": "Набор отмычек",
-    "slot": "tool",
-    "storage_type": "burden",
-    "volume": 1,
-    "weight": 0.3
-  },
-  "note_01": {
-    "category": "document",
-    "cost": 0,
-    "durability": 100,
-    "equippable": false,
-    "gender_restrict": "any",
-    "name": "Дневник хирурга (часть 1)",
-    "storage_type": "archive",
-    "text": "День 12. Операция прошла успешно, но пациент не просыпается. Странно, что голова ещё жива после такого вмешательства. Возможно, мои методы слишком радикальны, но результаты...\\n\\nРезультаты поражают. Нервная ткань регенерирует с невиданной скоростью. Если мои расчёты верны, через неделю он сможет говорить.",
-    "volume": 1,
-    "weight": 0.0
-  },
-  "note_02": {
-    "category": "document",
-    "cost": 10,
-    "durability": 100,
-    "equippable": false,
-    "gender_restrict": "any",
-    "name": "Дневник хирурга (часть 2)",
-    "storage_type": "archive",
-    "text": "День 47. Пациент пришёл в сознание. Первые слова были на языке, которого я не знаю. Глаза... в них что-то не так. Не человеческое.\\n\\nЯ должен прекратить эксперименты. Но любопытство сильнее страха. Что если я на пороге великого открытия?",
-    "volume": 1,
-    "weight": 0.2
-  },
-  "ring_noble": {
-    "category": "jewelry",
-    "cost": 200,
-    "durability": 100,
-    "equippable": true,
-    "gender_restrict": "any",
-    "name": "Перстень с гербом",
-    "slot": "ring",
-    "storage_type": "casket",
-    "volume": 1,
-    "weight": 0.1
-  },
-  "robe_monk": {
-    "category": "clothing",
-    "cost": 25,
-    "durability": 100,
-    "equippable": true,
-    "gender_restrict": "any",
-    "name": "Ряса монаха",
-    "slot": "clothing",
-    "storage_type": "burden",
-    "volume": 5,
-    "weight": 2.0
-  },
-  "silver_pouch": {
-    "category": "valuable",
-    "cost": 100,
-    "equippable": false,
-    "gender_restrict": "any",
-    "name": "Кошелёк серебра",
-    "storage_type": "casket",
+    "text": "Иди в пень!",
     "volume": 1,
     "weight": 0.5
   },
-  "sword_01": {
-    "category": "weapon",
-    "cost": 150,
-    "durability": 100,
-    "equippable": true,
-    "gender_restrict": "male",
-    "name": "Меч",
-    "requires_ammo": false,
-    "slot": "weapon",
-    "storage_type": "burden",
-    "volume": 1,
-    "weight": 1.0
-  },
-  "wooden_horse": {
+  "id_inv_que_002_boot": {
     "category": "quest",
     "cost": 0,
     "durability": 100,
     "equippable": false,
     "gender_restrict": "any",
-    "name": "Деревянная лошадка",
+    "name": "Ботинок Майкла",
     "storage_type": "casket",
-    "volume": 3,
-    "weight": 0.1
+    "volume": 1,
+    "weight": 0.5
   }
 }

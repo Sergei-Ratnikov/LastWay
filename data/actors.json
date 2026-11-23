@@ -1,30 +1,33 @@
 {
-  "001_001": {
-    "name": "Григорио",
-    "gender": "male",
-    "dialog_id": "001_001",
-    "movement": "patrol",
-    "patrol_points": [[8, 8], [12, 8], [12, 5], [8, 5]],
-    "move_delay_ms": 500
+  "id_act_ani_001_cat": {
+    "bed_pos": null,
+    "behavior_type": "wander",
+    "food_pos": null,
+    "gender": "female",
+    "name": "Мурка",
+    "species": "cat",
+    "toy_pos": null
   },
-  "001_002": {
-    "name": "Паскуале",
+  "id_act_npc_001_guard": {
+    "dialog_id": "",
     "gender": "male",
-    "dialog_id": "001_002",
-    "movement": "patrol",
-    "move_delay_ms": 800,
-    "patrol_points": [
-    [3, 8], 
-  [3, 9], [4, 9], [5, 9], [6, 9], [7, 9], 
-  [7, 8], [7, 7], 
-  [6, 7], [5, 7], [4, 7], [3, 7]
-  ]
+    "move_delay_ms": 500,
+    "movement": "stationary",
+    "name": "Гомес"
   },
-  "001_003": {
-    "name": "Карлос",
-    "movement": "follow", 
-    "move_delay_ms": 800,
-    "follow_target": "001_002", 
-    "dialog_id": "001_003"
+  "id_act_npc_002_guard": {
+    "dialog_id": "",
+    "gender": "male",
+    "move_delay_ms": 500,
+    "movement": "stationary",
+    "name": "Хуан"
+  },
+  "id_act_npc_003_guard": {
+    "dialog_id": "",
+    "follow_target": "id_act_npc_001_guard",
+    "gender": "male",
+    "move_delay_ms": 500,
+    "movement": "follow",
+    "name": "Карлос"
   }
 }

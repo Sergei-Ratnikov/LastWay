@@ -19,11 +19,8 @@
     [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
   ],
-  "npcs": [
-    {"npc_id": "001_001", "x": 8, "y": 8},
-    {"npc_id": "001_002", "x": 3, "y": 8},
-    {"npc_id": "001_003", "x": 8, "y": 10}
-  ],
+  "npcs": [],
+  "containers": [],
   "animals": [
     {
       "id": "cat_01",
@@ -32,29 +29,6 @@
       "food_pos": [3, 3],
       "bed_pos": [8, 4],
       "toy_pos": [6, 7]
-    }
-  ],
-  "containers": [
-    {
-      "id": "chest_01",
-      "x": 5,
-      "y": 3,
-      "name": "Старый сундук",
-      "locked": false,
-      "items": ["key_01", "note_02"],
-      "width": 1,
-      "height": 1,
-      "access_side": "south"
-    },
-    {
-      "id": "table_01",
-      "x": 4,
-      "y": 8,
-      "width": 3,
-      "height": 1,
-      "name": "Длинный стол",
-      "locked": false,
-      "items": []
     }
   ],
   "drops": [

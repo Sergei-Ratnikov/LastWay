@@ -1,5 +1,5 @@
 git add .
-git commit -m "Документы item_document.py имеют поле текст, его можно читать из инвентаря"
+git commit -m "Перевод containers, items и actors в общие списки. Добавлены скрипты-создатели сущностей actor_creator, container_creator, item_creator. Часть 1"
 git push
 git push --force origin master - если есть расхождениЯ, но я уверен, что у меня последняя версия
 git clone https://
