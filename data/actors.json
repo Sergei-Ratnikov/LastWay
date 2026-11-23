@@ -1,12 +1,14 @@
 {
-  "id_act_ani_001_cat": {
-    "bed_pos": null,
-    "behavior_type": "wander",
-    "food_pos": null,
+  "ani_001_cat": {
+    "name": "Кошка",
     "gender": "female",
-    "name": "Мурка",
     "species": "cat",
-    "toy_pos": null
+    "behavior_type": "emergent_needs",
+    "points_of_interest": {
+      "food": [3, 3],
+      "home": [8, 4],
+      "toy": [6, 7]
+    }
   },
   "id_act_npc_001_guard": {
     "dialog_id": "",

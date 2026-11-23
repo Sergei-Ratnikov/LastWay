@@ -19,21 +19,19 @@
     [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
   ],
-  "npcs": [],
-  "containers": [],
+  "npcs": [
+     {"id": "id_act_npc_002_guard", "x": 3, "y": 8}
+  ],
+  "containers": [
+    {"id": "id_con_001_table", "x": 8, "y": 3, "items": ["id_inv_que_002_boot"]}
+
+  ],
+
   "animals": [
-    {
-      "id": "cat_01",
-      "x": 7,
-      "y": 7,
-      "food_pos": [3, 3],
-      "bed_pos": [8, 4],
-      "toy_pos": [6, 7]
-    }
+    {"id": "ani_001_cat", "x": 7, "y": 8}
   ],
   "drops": [
-    {"id": "drop_001", "x": 10, "y": 10, "items": ["ring_noble", "apple"]},
-    {"id": "drop_002", "x": 3, "y": 5, "items": ["note_01"]}
+    {"id": "drop_001", "x": 10, "y": 10, "items": ["id_inv_doc_001_letter"]}
   ],
   "hidden_containers": [],
   "exits": [

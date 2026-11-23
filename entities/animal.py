@@ -33,6 +33,7 @@ class Animal(Actor):
         
         self.species = species
         self.behavior_type = behavior_type
+        self.move_delay_ms = 800
         
         # Потребности (0-100)
         self.hunger = 50
@@ -92,9 +93,42 @@ class Animal(Actor):
         if self.action != "moving" or self.target is None:
             return
         
-        if not self.path and self.target != (self.x, self.y):
-            # TODO: построить путь через pathfinding
-            pass
+        # Если уже дошли до цели
+        if (self.x, self.y) == self.target:
+            self.action = "idle"
+            self.path = []
+            self.target = None
+            self.action_timer = current_time + 3000  # Пауза 3 секунды
+            return
+        
+        # Строим путь, если его нет
+        if not self.path:
+            from world.pathfinding import find_path
+            path = find_path(
+                self.x, self.y,
+                self.target[0], self.target[1],
+                current_map.is_walkable_for_animal
+            )
+            if path:
+                self.path = path
+            else:
+                # Путь не найден — сбрасываем действие
+                self.action = "idle"
+                self.target = None
+                return
+        
+        # Двигаемся по пути (с учётом задержки)
+        if current_time - self.last_move_time < self.move_delay_ms:
+            return
+        
+        if self.path:
+            next_x, next_y = self.path.pop(0)
+            self.x = next_x
+            self.y = next_y
+            self.last_move_time = current_time
+            
+            # Обновляем направление взгляда
+            self.set_facing_from_delta(next_x - self.x, next_y - self.y)
     
     # =========================================================================
     # СЕРИАЛИЗАЦИЯ

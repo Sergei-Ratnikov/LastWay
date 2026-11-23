@@ -69,11 +69,21 @@ class Map:
 
 
         # --- КОНТЕЙНЕРЫ ---
-        # ВАЖНО: превращаем списки ID предметов в объекты Item через create_item()
-        for container_data in data.get("containers", []):
-            # Читаем список ID предметов из JSON
-            item_ids = container_data.get("items", [])
-            # Создаём объекты Item для каждого ID
+        # Шаблоны (размеры, названия) берутся из containers.json,
+        # экземпляры (координаты, содержимое) — из location.json
+        from world.container_data import ContainerData
+        container_data = ContainerData()
+        
+        for container_ref in data.get("containers", []):
+            con_id = container_ref.get("id")
+            base_data = container_data.get(con_id)
+            
+            if not base_data:
+                log.warning(f"MAP: шаблон контейнера '{con_id}' не найден в containers.json")
+                continue
+                
+            # Читаем предметы из location.json (список ID)
+            item_ids = container_ref.get("items", [])
             item_objects = []
             for item_id in item_ids:
                 try:
@@ -81,19 +91,22 @@ class Map:
                     item_objects.append(item)
                 except Exception as e:
                     log.warning(f"MAP: не удалось создать предмет {item_id}: {e}")
-            
+                    
             container = Container(
-                container_id=container_data.get("id"),
-                x=container_data.get("x"),
-                y=container_data.get("y"),
-                name=container_data.get("name", "Сундук"),
-                locked=container_data.get("locked", False),
-                items=item_objects,  # Передаём объекты Item, не строки
-                width=container_data.get("width", 1),
-                height=container_data.get("height", 1),
-                access_side=container_data.get("access_side", "all")
+                container_id=con_id,
+                x=container_ref.get("x", 0),
+                y=container_ref.get("y", 0),
+                name=base_data.get("name", "Контейнер"),
+                locked=container_ref.get("locked", base_data.get("locked", False)),
+                items=item_objects,
+                width=base_data.get("width", 1),
+                height=base_data.get("height", 1),
+                access_side=base_data.get("access_side", "all")
             )
             self.containers.append(container)
+
+
+
         
         # --- ДРОПЫ ---
         # Аналогично: превращаем ID в объекты Item
@@ -116,25 +129,42 @@ class Map:
             self.drops.append(drop)
         
         # --- ЖИВОТНЫЕ ---
-        for animal_data in data.get("animals", []):
+        # Данные животных берутся из data/actors.json (единый справочник),
+        # позиции — из location.json (список {id, x, y})
+        actor_data = ActorData()
+        animal_refs = data.get("animals", [])
+        for animal_ref in animal_refs:
+            animal_id = animal_ref.get("id")
+            x = animal_ref.get("x", 0)
+            y = animal_ref.get("y", 0)
+            
+            template = actor_data.get(animal_id)
+            if not template:
+                log.warning(f"MAP: животное '{animal_id}' не найдено в actors.json, пропускаю")
+                continue
+            
             animal = Animal(
-                animal_id=animal_data.get("id"),
-                name="Кошка",
-                x=animal_data.get("x", 0),
-                y=animal_data.get("y", 0),
-                species="cat",
-                behavior_type="emergent_needs"
+                animal_id=animal_id,
+                name=template.get("name", "Животное"),
+                x=x,
+                y=y,
+                species=template.get("species", "cat"),
+                behavior_type=template.get("behavior_type", "emergent_needs"),
+                gender=template.get("gender", "male"),
             )
-            food_pos = animal_data.get("food_pos")
-            bed_pos = animal_data.get("bed_pos")
-            toy_pos = animal_data.get("toy_pos")
-            if food_pos:
-                animal.points_of_interest["food"] = tuple(food_pos)
-            if bed_pos:
-                animal.points_of_interest["home"] = tuple(bed_pos)
-            if toy_pos:
-                animal.points_of_interest["toy"] = tuple(toy_pos)
+            
+            # Загружаем точки интереса из actors.json
+            poi = template.get("points_of_interest", {})
+            for key in ("food", "home", "toy"):
+                pos = poi.get(key)
+                if pos and isinstance(pos, list) and len(pos) == 2:
+                    animal.points_of_interest[key] = tuple(pos)
+            
             self.animals.append(animal)
+            log.info(f"MAP: загружено животное {animal.name} ({animal.species}) на ({x},{y}), "
+                    f"POI: food={animal.points_of_interest['food']}, "
+                    f"home={animal.points_of_interest['home']}, "
+                    f"toy={animal.points_of_interest['toy']}")
         
         # --- ВЫХОДЫ И СТАРТОВАЯ ПОЗИЦИЯ ---
         self.exits = data.get("exits", [])
