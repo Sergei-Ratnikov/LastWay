@@ -135,17 +135,23 @@ class Item:
                 return False
         return True
     
-    def drop(self, actor, current_map, x: int, y: int):
-        """Логика выбрасывания предмета на землю."""
-        log.info(f"Item: {actor.name} бросает {self.name} на ({x},{y})")
-        from objects.drop import ItemDrop
-        drop = ItemDrop(
-            drop_id=f"drop_{id(self)}",
-            x=x, y=y,
-            items=[self.id] * self.quantity
-        )
-        current_map.drops.append(drop)
-        return True
+    # def drop(self, actor, current_map, x: int, y: int):
+    #     """Логика выбрасывания предмета на землю."""
+    #     log.info(f"Item: {actor.name} бросает {self.name} на ({x},{y})")
+    #     from objects.drop import ItemDrop
+    #     drop = ItemDrop(
+    #         drop_id=f"drop_{id(self)}",
+    #         x=x, y=y,
+    #         items=[self.id] * self.quantity
+    #     )
+    #     current_map.drops.append(drop)
+    #     return True
+
+    # Item.drop() удалён: был сломан (создавал ItemDrop со строками вместо
+    # объектов Item) и не использовался. Выброс предмета реализован в
+    # InventoryMenu._on_drop → Map.add_or_update_drop.
+
+
     
     def use(self, actor, target=None):
         """Базовое использование предмета."""

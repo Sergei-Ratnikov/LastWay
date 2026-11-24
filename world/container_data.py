@@ -1,15 +1,13 @@
 # world/container_data.py
-# =============================================================================
-# ЗАГРУЗЧИК ДАННЫХ О КОНТЕЙНЕРАХ
-# Читает data/containers.json и предоставляет доступ к данным контейнеров.
-# Работает как Singleton (один экземпляр на всё приложение).
-# =============================================================================
-
 import json
 import os
+from settings import DATA_DIR
 from logger import log
 
+
 class ContainerData:
+    """Singleton для загрузки и доступа к шаблонам контейнеров."""
+
     _instance = None
     _data = None
 
@@ -23,7 +21,8 @@ class ContainerData:
             self._load_data()
 
     def _load_data(self):
-        path = os.path.join("data", "containers.json")
+        # FIX (#9): абсолютный путь.
+        path = os.path.join(DATA_DIR, "containers.json")
         if not os.path.exists(path):
             ContainerData._data = {}
             return
@@ -39,7 +38,7 @@ class ContainerData:
         if ContainerData._data is None:
             self._load_data()
         return ContainerData._data.get(con_id, {})
-        
+
     def get_all_ids(self) -> list:
         if ContainerData._data is None:
             self._load_data()

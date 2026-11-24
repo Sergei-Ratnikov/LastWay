@@ -71,16 +71,6 @@ class Actor:
         if direction in ("north", "south", "east", "west"):
             self.facing = direction
 
-    def set_facing(self, direction: str):
-        """
-        Устанавливает направление взгляда.
-        
-        Аргументы:
-            direction (str): "north", "south", "east", "west".
-        """
-        if direction in ("north", "south", "east", "west"):
-            self.facing = direction
-    
     def set_facing_from_delta(self, dx: int, dy: int):
         """
         Устанавливает направление взгляда на основе вектора движения.

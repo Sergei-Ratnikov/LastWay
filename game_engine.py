@@ -94,8 +94,8 @@ class GameEngine:
         from ui.document_viewer_ui import DocumentViewer
         self.document_viewer = DocumentViewer()
         
-        # FIX: индекс выбранного предмета в инвентаре (для навигации стрелками)
-        self.inventory_selected_index = 0
+        # FIX (#13): индекс выбранного предмета больше не нужен здесь —
+        # InventoryMenu хранит свои индексы. Поле удалено.
 
     # -------------------------------------------------------------------------
     # ОСНОВНОЙ ЦИКЛ
@@ -291,54 +291,54 @@ class GameEngine:
             return
         self._handle_interaction(nx, ny)
 
-    def _drop_selected_item(self):
-        """
-        Выбрасывает выбранный предмет из инвентаря под ноги игрока.
-        Проверяет, не квестовый ли предмет (их нельзя выбрасывать).
-        """
-        items = self.game_state.inventory.get_items()
+    # def _drop_selected_item(self):
+    #     """
+    #     Выбрасывает выбранный предмет из инвентаря под ноги игрока.
+    #     Проверяет, не квестовый ли предмет (их нельзя выбрасывать).
+    #     """
+    #     items = self.game_state.inventory.get_items()
         
-        # Проверяем, что инвентарь не пуст
-        if not items:
-            self._show_message("Инвентарь пуст")
-            return
+    #     # Проверяем, что инвентарь не пуст
+    #     if not items:
+    #         self._show_message("Инвентарь пуст")
+    #         return
         
-        # Проверяем, что индекс валиден
-        if self.inventory_selected_index >= len(items):
-            return
+    #     # Проверяем, что индекс валиден
+    #     if self.inventory_selected_index >= len(items):
+    #         return
         
-        item = items[self.inventory_selected_index]
+    #     item = items[self.inventory_selected_index]
         
-        # Проверка: квестовые предметы нельзя выбрасывать
-        from objects.item import ItemCategory
-        if item.category == ItemCategory.QUEST:
-            self._show_message("Этот предмет слишком важен, чтобы выбрасывать")
-            log.info(f"БРОСОК: попытка выбросить квестовый предмет {item.name} — отказано")
-            return
+    #     # Проверка: квестовые предметы нельзя выбрасывать
+    #     from objects.item import ItemCategory
+    #     if item.category == ItemCategory.QUEST:
+    #         self._show_message("Этот предмет слишком важен, чтобы выбрасывать")
+    #         log.info(f"БРОСОК: попытка выбросить квестовый предмет {item.name} — отказано")
+    #         return
         
-        # Удаляем из инвентаря
-        removed = self.game_state.inventory.remove_item(item)
-        if not removed:
-            log.warning(f"БРОСОК: не удалось удалить {item.name} из инвентаря")
-            return
+    #     # Удаляем из инвентаря
+    #     removed = self.game_state.inventory.remove_item(item)
+    #     if not removed:
+    #         log.warning(f"БРОСОК: не удалось удалить {item.name} из инвентаря")
+    #         return
         
-        # Бросаем под ноги игрока
-        player_x = self.game_state.player.x
-        player_y = self.game_state.player.y
-        self.current_map.add_or_update_drop(player_x, player_y, item)
+    #     # Бросаем под ноги игрока
+    #     player_x = self.game_state.player.x
+    #     player_y = self.game_state.player.y
+    #     self.current_map.add_or_update_drop(player_x, player_y, item)
         
-        log.info(f"БРОСОК: игрок выбросил {item.name} на ({player_x},{player_y})")
-        self._show_message(f"Выброшено: {item.name}")
+    #     log.info(f"БРОСОК: игрок выбросил {item.name} на ({player_x},{player_y})")
+    #     self._show_message(f"Выброшено: {item.name}")
         
-        # Корректируем индекс, если список стал короче
-        items_after = self.game_state.inventory.get_items()
-        if not items_after:
-            self.inventory_selected_index = 0
-        else:
-            self.inventory_selected_index = max(
-                0, 
-                min(self.inventory_selected_index, len(items_after) - 1)
-            )
+    #     # Корректируем индекс, если список стал короче
+    #     items_after = self.game_state.inventory.get_items()
+    #     if not items_after:
+    #         self.inventory_selected_index = 0
+    #     else:
+    #         self.inventory_selected_index = max(
+    #             0, 
+    #             min(self.inventory_selected_index, len(items_after) - 1)
+    #         )
 
     def _handle_interaction(self, x, y):
         if not self._is_in_range(x, y):
@@ -445,6 +445,26 @@ class GameEngine:
                 "path": npc.path,
             })
 
+        # FIX (#14): сохраняем состояние животных при уходе из локации,
+        # иначе при возврате они сбрасываются к дефолтам из actors.json.
+        state_data["animals"] = []
+        for animal in self.current_map.animals:
+            state_data["animals"].append({
+                "id": animal.id,
+                "x": animal.x,
+                "y": animal.y,
+                "hunger": animal.hunger,
+                "energy": animal.energy,
+                "boredom": animal.boredom,
+                "wanderlust": animal.wanderlust,
+                "fear": animal.fear,
+                "aggression": animal.aggression,
+                "action": animal.action,
+                "target": list(animal.target) if animal.target else None,
+                "action_timer": animal.action_timer,
+                "path": [list(p) for p in animal.path],
+            })            
+
         for container in self.current_map.containers:
             state_data["containers"].append({
                 "id": container.id,
@@ -501,6 +521,24 @@ class GameEngine:
                         npc.patrol_index = npc_save["patrol_index"]
                         npc.path = [tuple(p) for p in npc_save["path"]]
                         npc.wait_until = 0
+                        break
+
+            # FIX (#14): восстанавливаем состояние животных
+            for animal_save in saved_state.get("animals", []):
+                for animal in self.current_map.animals:
+                    if animal.id == animal_save["id"]:
+                        animal.x = animal_save["x"]
+                        animal.y = animal_save["y"]
+                        animal.hunger = animal_save["hunger"]
+                        animal.energy = animal_save["energy"]
+                        animal.boredom = animal_save["boredom"]
+                        animal.wanderlust = animal_save["wanderlust"]
+                        animal.fear = animal_save["fear"]
+                        animal.aggression = animal_save["aggression"]
+                        animal.action = animal_save["action"]
+                        animal.target = tuple(animal_save["target"]) if animal_save["target"] else None
+                        animal.action_timer = animal_save["action_timer"]
+                        animal.path = [tuple(p) for p in animal_save["path"]]
                         break
 
             for cont_save in saved_state["containers"]:

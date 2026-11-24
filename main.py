@@ -17,7 +17,6 @@ from logger import log
 from game_engine import GameEngine
 from game_state import GameState
 
-
 def main():
     """Главная функция: показывает меню, затем запускает игру."""
     log.info("=" * 60)

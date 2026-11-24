@@ -1,58 +1,51 @@
 # entities/player.py
 # =============================================================================
 # ИГРОК (PLAYER)
-# Наследуется от Actor. Имеет класс, инвентарь, максимальный вес.
+# Наследуется от Person. Имеет класс, инвентарь, максимальный вес.
 # =============================================================================
 
-from entities.actor import Actor
+from entities.person import Person
 from logger import log
 
 
-class Player(Actor):
+class Player(Person):
     """
-    Игрок. Наследуется от Actor.
+    Игрок. Наследуется от Person.
     Содержит player_class, max_weight и связанные с классом атрибуты.
     """
-    
+
     def __init__(self, x: int = 0, y: int = 0, player_class: str = "Идальго",
                  name: str = "Герой", gender: str = "male"):
-        """
-        Создаёт игрока.
-        
-        Аргументы:
-            x, y (int): Начальная позиция.
-            player_class (str): Класс персонажа ("Идальго", "Священник" и т.д.).
-            name (str): Имя (по умолчанию "Герой").
-            gender (str): Пол ("male", "female").
-        """
-        # FIX: name и gender передаём в базовый класс
-        super().__init__(actor_id="player", name=name, gender=gender, x=x, y=y)
-        
+        super().__init__(
+            actor_id="player",
+            name=name,
+            gender=gender,
+            x=x,
+            y=y,
+            max_weight=50.0,
+        )
         self.player_class = player_class
-        
-        # Максимальный переносимый вес (зависит от класса)
-        self.max_weight = 50.0
-        
-        # Социальные характеристики (задел на будущее)
         self.humanity = 50
         self.days_left = 14
-    
+
     # =========================================================================
     # СЕРИАЛИЗАЦИЯ
     # =========================================================================
-    
+
     def to_dict(self) -> dict:
-        """Расширяем базовую сериализацию полями игрока."""
         data = super().to_dict()
         data.update({
             "player_class": self.player_class,
-            "max_weight": self.max_weight,
+            # Humanity и days_left теперь живут в Player (единый источник истины
+            # для сохранений). GameState.humanity остаётся как зеркало для
+            # удобства UI/диалогов — синхронизируется при загрузке.
+            "humanity": self.humanity,
+            "days_left": self.days_left,
         })
         return data
-    
+
     @classmethod
     def from_dict(cls, data: dict):
-        """Создаёт игрока из словаря (для загрузок)."""
         player = cls(
             x=data.get("x", 0),
             y=data.get("y", 0),
@@ -64,4 +57,8 @@ class Player(Actor):
         player.health = data.get("health", 100)
         player.max_health = data.get("max_health", 100)
         player.max_weight = data.get("max_weight", 50.0)
+        player.humanity = data.get("humanity", 50)
+        player.days_left = data.get("days_left", 14)
+        player.skills = dict(data.get("skills", {}))
+        player.faction = data.get("faction", "neutral")
         return player

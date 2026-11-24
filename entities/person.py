@@ -1,51 +1,45 @@
 # entities/person.py
 # =============================================================================
 # БАЗОВЫЙ КЛАСС PERSON
-# Описывает общие свойства всех людей в игре (игрок и NPC).
-# Наследуется от Actor, добавляет характеристики персонажа.
+# Общий предок для людей: Player, NPC, (позже) Companion, KeyCharacter.
+# Содержит общие для людей свойства: переносимый вес, навыки, фракция.
 # =============================================================================
 
 from entities.actor import Actor
 
 class Person(Actor):
-    """
-    Базовый класс для всех людей в игре.
-    Наследники: Player (игрок), NPC (неигровые персонажи).
-    """
-    
-    def __init__(self, person_id, name, x, y, gender="male", max_weight=50.0):
-        """
-        Инициализация Person.
-        
-        Аргументы:
-            person_id (str): Уникальный идентификатор.
-            name (str): Отображаемое имя.
-            x (int): Начальная координата X.
-            y (int): Начальная координата Y.
-            gender (str): Пол персонажа ("male" или "female").
-            max_weight (float): Максимальный переносимый вес.
-        """
-        # Вызываем конструктор базового класса Actor
-        super().__init__(person_id, name, x, y)
-        
-        # Пол персонажа
-        self.gender = gender
-        
-        # Максимальный переносимый вес (ограничение инвентаря)
+    def __init__(self, actor_id: str, name: str, gender: str,
+                 x: int = 0, y: int = 0, max_weight: float = 50.0):
+        super().__init__(actor_id=actor_id, name=name, gender=gender, x=x, y=y)
         self.max_weight = max_weight
-    
-    # -------------------------------------------------------------------------
-    # МЕТОДЫ-ЗАГОТОВКИ (БУДУТ РЕАЛИЗОВАНЫ ПОЗЖЕ)
-    # -------------------------------------------------------------------------
-    
-    # def take_damage(self, amount):
-    #     """Получить урон."""
-    #     pass
-    
-    # def heal(self, amount):
-    #     """Восстановить здоровье."""
-    #     pass
-    
-    # def is_alive(self):
-    #     """Проверить, жив ли персонаж."""
-    #     pass
+        self.skills: dict[str, int] = {}
+        self.faction: str = "neutral"
+
+    # =========================================================================
+    # СЕРИАЛИЗАЦИЯ (расширяет Actor)
+    # =========================================================================
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        data.update({
+            "max_weight": self.max_weight,
+            "skills": dict(self.skills),
+            "faction": self.faction,
+        })
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        person = cls(
+            actor_id=data.get("id", "unknown"),
+            name=data.get("name", "Безымянный"),
+            gender=data.get("gender", "any"),
+            x=data.get("x", 0),
+            y=data.get("y", 0),
+            max_weight=data.get("max_weight", 50.0),
+        )
+        person.facing = data.get("facing", "south")
+        person.health = data.get("health", 100)
+        person.max_health = data.get("max_health", 100)
+        person.skills = dict(data.get("skills", {}))
+        person.faction = data.get("faction", "neutral")
+        return person

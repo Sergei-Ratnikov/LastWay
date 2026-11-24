@@ -6,8 +6,6 @@
 
 import pygame
 from settings import *
-# FIX: для отображения имён предметов в инвентаре (а не item_id)
-from world.item_data import ItemData
 
 class Renderer:
     """
@@ -17,8 +15,8 @@ class Renderer:
     """
     def __init__(self, game_engine):
         self.engine = game_engine
-        # Справочник предметов (singleton) для UI инвентаря
-        self.item_data = ItemData()
+
+        # self.item_data = ItemData()
         
         # ---------------------------------------------------------------------
         # КЭШИРОВАНИЕ РЕСУРСОВ
