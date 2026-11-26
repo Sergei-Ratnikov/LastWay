@@ -1,11 +1,14 @@
 # systems/save_system.py
-# =============================================================================
-# СИСТЕМА СОХРАНЕНИЙ ИГРЫ
-# =============================================================================
+
+'''
+СИСТЕМА СОХРАНЕНИЙ ИГРЫ
+'''
 
 import json
 import os
 import sys
+
+import pygame
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import log
 from objects.item import Item, create_item
@@ -288,6 +291,19 @@ class SaveSystem:
         self.engine.move_queue = []
         self.engine.player_target = None
         self.engine.location_manager.location_states = {}
+        
+        # FIX: сбрасываем отложенные состояния движения/взаимодействия.
+        # Иначе после загрузки во время игры (F9) игрок может пойти
+        # к старой цели или «зависнуть» в pending_interaction.
+        self.engine.move_queue = []
+        self.engine.player_target = None
+        self.engine.pending_interaction = None
+        self.engine.pending_target_cell = None
+        self.engine.pending_npc_id = None
+        self.engine.stuck_counter = 0
+        self.engine.last_move_time = pygame.time.get_ticks()
+
+
         log.info(f"ЗАГРУЗКА: успешно завершено")
         return True
     

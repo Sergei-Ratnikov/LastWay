@@ -1,8 +1,10 @@
 # entities/player.py
-# =============================================================================
-# ИГРОК (PLAYER)
-# Наследуется от Person. Имеет класс, инвентарь, максимальный вес.
-# =============================================================================
+
+'''
+ИГРОК (PLAYER)
+Наследуется от Person. Имеет класс, инвентарь, максимальный вес.
+ВАЖНО: humanity и days_left живут в GameState (единый источник истины)
+'''
 
 from entities.person import Person
 from logger import log
@@ -18,8 +20,7 @@ class Player(Person):
         """
         Создаёт персонажа.
         Аргументы:
-            человечность
-            число прожитых дней
+            класс игрока (влияет на лимит веса и доступы)
         """
         super().__init__(
             actor_id="player",
@@ -30,8 +31,6 @@ class Player(Person):
             max_weight=50.0,
         )
         self.player_class = player_class
-        self.humanity = 50
-        self.days_left = 14
 
     # =========================================================================
     # СЕРИАЛИЗАЦИЯ
@@ -39,14 +38,10 @@ class Player(Person):
 
     def to_dict(self) -> dict:
         '''Сериализация'''
+        # humanity/days_left сюда НЕ входят — они в GameState
         data = super().to_dict()
         data.update({
             "player_class": self.player_class,
-            # Humanity и days_left теперь живут в Player (единый источник истины
-            # для сохранений). GameState.humanity остаётся как зеркало для
-            # удобства UI/диалогов — синхронизируется при загрузке.
-            "humanity": self.humanity,
-            "days_left": self.days_left,
         })
         return data
 
@@ -63,8 +58,8 @@ class Player(Person):
         player.health = data.get("health", 100)
         player.max_health = data.get("max_health", 100)
         player.max_weight = data.get("max_weight", 50.0)
-        player.humanity = data.get("humanity", 50)
-        player.days_left = data.get("days_left", 14)
         player.skills = dict(data.get("skills", {}))
         player.faction = data.get("faction", "neutral")
+        # Старые сейвы могут содержать "humanity"/"days_left" в player —
+        # они игнорируются, GameState читает их из того же dict.
         return player

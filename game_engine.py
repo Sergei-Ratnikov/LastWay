@@ -1,8 +1,9 @@
 # game_engine.py
-# =============================================================================
-# ГЛАВНЫЙ ИГРОВОЙ ДВИЖОК
-# Управляет циклом, событиями, обновлением и отрисовкой.
-# =============================================================================
+
+'''
+ГЛАВНЫЙ ИГРОВОЙ ДВИЖОК
+Управляет циклом, событиями, обновлением и отрисовкой.
+'''
 
 import os
 import pygame
@@ -86,6 +87,10 @@ class GameEngine:
         # Системы
         self.renderer = Renderer(self)
         self.movement_system = MovementSystem(self)
+
+        # Система инвентаря (единая точка правил, живёт всё время)
+        from systems.inventory_system import InventorySystem
+        self.inventory_system = InventorySystem(self)
 
         from ui.inventory_ui import InventoryMenu
         self.inventory_menu = InventoryMenu(self)

@@ -1,13 +1,14 @@
 # systems/movement_system.py
-# =============================================================================
-# СИСТЕМА ДВИЖЕНИЯ
-# Отвечает за:
-# - движение игрока (по клавишам и по move_queue)
-# - движение NPC (патрулирование, следование)
-# - обновление отложенного взаимодействия (pending_interaction)
-# - шаг сущности (обход препятствий, расхождение NPC)
-# - поиск подходной клетки для взаимодействия
-# =============================================================================
+
+'''
+СИСТЕМА ДВИЖЕНИЯ
+Отвечает за:
+- движение игрока (по клавишам и по move_queue)
+- движение NPC (патрулирование, следование)
+- обновление отложенного взаимодействия (pending_interaction)
+- шаг сущности (обход препятствий, расхождение NPC)
+- поиск подходной клетки для взаимодействия
+'''
 
 import pygame
 from settings import MOVE_DELAY_MS
@@ -22,6 +23,19 @@ class MovementSystem:
 
     def __init__(self, game_engine):
         self.engine = game_engine
+
+    def _get_patrol_target(self, npc) -> tuple[int, int]:
+        """
+        Возвращает (x, y) текущей точки патруля.
+        Поддерживает оба формата из actors.json:
+            [x, y]            — старый
+            {"pos": [x, y]}   — новый (как в renderer._render_npcs)
+        """
+        target = npc.patrol_points[npc.patrol_index]
+        if isinstance(target, dict):
+            pos = target.get("pos", [npc.x, npc.y])
+            return pos[0], pos[1]
+        return target[0], target[1]
 
     # -------------------------------------------------------------------------
     # ОБНОВЛЕНИЕ ДВИЖЕНИЯ ИГРОКА
@@ -112,26 +126,17 @@ class MovementSystem:
 
         # --- ПАТРУЛИРОВАНИЕ ---
         if npc.patrol_points:
-            target = npc.patrol_points[npc.patrol_index]
-            if isinstance(target, list):
-                tx, ty = target[0], target[1]
-            else:
-                tx, ty = target[0], target[1]
-
+            tx, ty = self._get_patrol_target(npc)
             if (npc.x, npc.y) == (tx, ty):
                 npc.patrol_index = (npc.patrol_index + 1) % len(npc.patrol_points)
                 npc.last_move_time = current_time
                 return
-
+            
         if not npc.path and npc.patrol_points:
             if npc.wait_until > current_time:
                 return
 
-            target = npc.patrol_points[npc.patrol_index]
-            if isinstance(target, list):
-                tx, ty = target[0], target[1]
-            else:
-                tx, ty = target[0], target[1]
+            tx, ty = self._get_patrol_target(npc)
 
             from world.pathfinding import find_path
             path = find_path(npc.x, npc.y, tx, ty, engine.current_map.is_walkable_static)
@@ -224,7 +229,7 @@ class MovementSystem:
 
         # --- ДВЕРИ ---
         tile_ahead = engine.current_map.get_tile_type(next_x, next_y)
-        if tile_ahead in (5, 6, 7, 8, 9):
+        if tile_ahead in (5, 6, 7, 9):
             if engine.current_map.open_door(next_x, next_y):
                 engine.current_map.reset_npcs_near_door(next_x, next_y)
                 if not is_player:

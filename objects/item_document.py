@@ -60,18 +60,15 @@ class DocumentItem(Item):
         
         if not self.text:
             log.warning(f"DocumentItem: у документа '{item_id}' отсутствует поле 'text'")
-    
-    def use(self, engine):
+
+    def use(self, actor, engine=None) -> bool:
         """
         Чтение документа: открывает модальное окно с текстом.
-        
-        Аргументы:
-            engine: GameEngine (нужен для доступа к document_viewer).
+        Сигнатура (actor, engine) — единая для всех Item.use.
         """
-        log.info(f"DocumentItem: {engine.game_state.player.name} читает '{self.name}'")
-        
-        # Открываем окно просмотра документа
-        if hasattr(engine, 'document_viewer'):
+        log.info(f"DocumentItem: {actor.name} читает '{self.name}'")
+        if engine is not None and hasattr(engine, 'document_viewer'):
             engine.document_viewer.open(self.text, self.name)
-        else:
-            log.error("DocumentItem: у GameEngine нет document_viewer")
+            return True
+        log.error("DocumentItem: нет engine.document_viewer")
+        return False
