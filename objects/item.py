@@ -64,6 +64,9 @@ class Item:
     """
     
     def __init__(self, item_id: str, quantity: int = 1):
+        '''
+        создает экземпляр предмета на базе items.json
+        '''
         self.id = item_id
         self.quantity = quantity
         
@@ -134,27 +137,10 @@ class Item:
                 log.info(f"Item: {self.name} не влез (превышен вес)")
                 return False
         return True
-    
-    # def drop(self, actor, current_map, x: int, y: int):
-    #     """Логика выбрасывания предмета на землю."""
-    #     log.info(f"Item: {actor.name} бросает {self.name} на ({x},{y})")
-    #     from objects.drop import ItemDrop
-    #     drop = ItemDrop(
-    #         drop_id=f"drop_{id(self)}",
-    #         x=x, y=y,
-    #         items=[self.id] * self.quantity
-    #     )
-    #     current_map.drops.append(drop)
-    #     return True
-
-    # Item.drop() удалён: был сломан (создавал ItemDrop со строками вместо
-    # объектов Item) и не использовался. Выброс предмета реализован в
-    # InventoryMenu._on_drop → Map.add_or_update_drop.
-
 
     
     def use(self, actor, target=None):
-        """Базовое использование предмета."""
+        """Базовое использование предмета. Заглушка"""
         log.info(f"Item: {actor.name} использует {self.name}")
         pass
     
@@ -202,7 +188,6 @@ class Item:
 # =============================================================================
 # ФАБРИКА ПРЕДМЕТОВ
 # =============================================================================
-
 def create_item(item_id: str, quantity: int = 1) -> Item:
     """
     Фабрика предметов.
@@ -214,7 +199,6 @@ def create_item(item_id: str, quantity: int = 1) -> Item:
     Аргументы:
         item_id (str): ID предмета из items.json.
         quantity (int): Количество в стаке.
-        
     Возвращает:
         Item: Экземпляр нужного класса-наследника (или базового Item при ошибке).
     """

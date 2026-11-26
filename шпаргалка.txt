@@ -1,5 +1,5 @@
 git add .
-git commit -m "исправление багов в части интеграции классов сущностей и предметов"
+git commit -m "+ утилита Palantir"
 git push
 git push --force origin master - если есть расхождениЯ, но я уверен, что у меня последняя версия
 git clone https://

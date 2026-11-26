@@ -9,11 +9,18 @@ from logger import log
 
 
 class Animal(Actor):
-    """Животное: кошка, собака, крыса."""
+    """Базовое животное: кошка, собака, крыса - дополнить"""
 
     def __init__(self, animal_id: str, name: str, x: int, y: int,
                  species: str = "cat", behavior_type: str = "emergent_needs",
                  gender: str = "male"):
+        """
+        Создаёт базовое животное (cat)
+        Аргументы для эмерджентного поведения:
+            голод
+            энергия
+            скука
+        """
         super().__init__(actor_id=animal_id, name=name, gender=gender, x=x, y=y)
 
         self.species = species      # кошка, собака, крыса
@@ -98,8 +105,8 @@ class Animal(Actor):
     # =========================================================================
     # СЕРИАЛИЗАЦИЯ
     # =========================================================================
-
     def to_dict(self) -> dict:
+        '''Сериализация'''
         data = super().to_dict()
         poi_serializable = {}
         for key, value in self.points_of_interest.items():

@@ -10,12 +10,17 @@ from logger import log
 
 class Player(Person):
     """
-    Игрок. Наследуется от Person.
-    Содержит player_class, max_weight и связанные с классом атрибуты.
+    Персонаж игрока
     """
 
     def __init__(self, x: int = 0, y: int = 0, player_class: str = "Идальго",
                  name: str = "Герой", gender: str = "male"):
+        """
+        Создаёт персонажа.
+        Аргументы:
+            человечность
+            число прожитых дней
+        """
         super().__init__(
             actor_id="player",
             name=name,
@@ -33,6 +38,7 @@ class Player(Person):
     # =========================================================================
 
     def to_dict(self) -> dict:
+        '''Сериализация'''
         data = super().to_dict()
         data.update({
             "player_class": self.player_class,

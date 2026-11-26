@@ -11,13 +11,19 @@ from logger import log
 
 class NPC(Person):
     """
-    НПС: стражник, крестьянин, монах, торговец.
+    NPC: стражник, крестьянин, торговец.
     """
 
     def __init__(self, npc_id: str, name: str, x: int, y: int,
                  dialog_id: str, gender: str = "male",
                  movement: str = "stationary", patrol_points: list = None,
                  move_delay_ms: int = 500):
+        """
+        Создаёт базового NPC
+        Аргументы:
+            id диалога
+            движение и точки патрулирования
+        """    
         super().__init__(
             actor_id=npc_id,
             name=name,
@@ -39,7 +45,7 @@ class NPC(Person):
 
     @classmethod
     def from_actor_data(cls, npc_id: str, x: int, y: int):
-        """Создаёт NPC из шаблона в actors.json."""
+        """Создаёт NPC из шаблона по npc_id в actors.json."""
         actor_data = ActorData()
         data = actor_data.get(npc_id)
 
@@ -67,6 +73,7 @@ class NPC(Person):
     # =========================================================================
 
     def to_dict(self) -> dict:
+        '''Сериализация'''
         data = super().to_dict()
         data.update({
             "dialog_id": self.dialog_id,

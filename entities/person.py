@@ -8,8 +8,18 @@
 from entities.actor import Actor
 
 class Person(Actor):
+    """
+    Базовый человек
+    """
     def __init__(self, actor_id: str, name: str, gender: str,
                  x: int = 0, y: int = 0, max_weight: float = 50.0):
+        """
+        Создаёт базового человека.
+        Аргументы:
+            максимальный переносимый вес
+            навыки
+            фракция
+        """
         super().__init__(actor_id=actor_id, name=name, gender=gender, x=x, y=y)
         self.max_weight = max_weight
         self.skills: dict[str, int] = {}
@@ -19,6 +29,7 @@ class Person(Actor):
     # СЕРИАЛИЗАЦИЯ (расширяет Actor)
     # =========================================================================
     def to_dict(self) -> dict:
+        '''Сериализация'''
         data = super().to_dict()
         data.update({
             "max_weight": self.max_weight,

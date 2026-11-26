@@ -1,9 +1,9 @@
+# tools/actor_creator.py
+
 """
-ACTOR CREATOR — Утилита для создания и редактирования существ в игре Last Way
-Графический интерфейс на tkinter для работы с data/actors.json.
+Утилита для создания и редактирования существ для работы с data/actors.json.
 Поддерживает два типа существ: NPC и Animal.
-Автогенерация ID в реальном времени.
-Динамические поля: patrol_points (для patrol), follow_target (для follow).
+Автогенерация ID
 
 Запуск: python tools/actor_creator.py (из корня проекта)
 """

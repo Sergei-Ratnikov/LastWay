@@ -19,12 +19,11 @@ class Container:
                   width=1, height=1, access_side="all"):
         """
         Инициализация контейнера.
-        
-        Аргументы:
+            Аргументы:
             container_id (str): Уникальный идентификатор.
             x, y (int): Координаты на карте.
             name (str): Отображаемое имя.
-            locked (bool): Заперт ли контейнер.
+            Заперт? открыт? разрушаем?
             items (list[Item]): Список объектов Item внутри.
             width, height (int): Размеры контейнера (в клетках).
             access_side (str): Сторона доступа ("all", "north", "south", "east", "west").
@@ -48,7 +47,7 @@ class Container:
     # =========================================================================
     
     def get_occupied_cells(self):
-        """Возвращает список клеток, которые занимает контейнер."""
+        """Геометрия. Возвращает список клеток, которые занимает контейнер."""
         cells = []
         for dy in range(self.height):
             for dx in range(self.width):
@@ -98,7 +97,6 @@ class Container:
     def add_item(self, item: Item):
         """
         Добавляет предмет в контейнер.
-        
         Аргументы:
             item (Item): Экземпляр предмета для добавления.
         """
@@ -108,10 +106,8 @@ class Container:
     def remove_item(self, item: Item) -> Item | None:
         """
         Удаляет конкретный экземпляр предмета из контейнера.
-        
         Аргументы:
             item (Item): Экземпляр предмета для удаления.
-            
         Возвращает:
             Item | None: Удалённый предмет или None.
         """
@@ -124,10 +120,8 @@ class Container:
     def remove_item_by_id(self, item_id: str) -> Item | None:
         """
         Удаляет первый найденный предмет с указанным ID.
-        
         Аргументы:
             item_id (str): ID предмета.
-            
         Возвращает:
             Item | None: Удалённый предмет или None.
         """
